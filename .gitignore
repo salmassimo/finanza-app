@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+venv/
+.env
+.env.prod
+*.egg-info/
+dist/
+build/
+.pytest_cache/
+
+# Node / React Native
+node_modules/
+.expo/
+dist/
+build/
+*.log
+.DS_Store
+web-build/
+
+# Database
+*.sqlite
+*.db
+*.dump
+*.sql.gz
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+
+# Secrets
+*.pem
+*.key
+secrets/
+.env.prod
+
+# Claude / session data
+.claude/
+
+# Temp deploy folders
+CTempfinanza_deploy/
+
+# Docker volumes (dati locali)
+pgdata/

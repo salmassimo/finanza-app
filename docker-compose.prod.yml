@@ -1,0 +1,53 @@
+﻿# Uso: docker compose -f docker-compose.prod.yml --env-file .env.prod up -d
+
+services:
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       finanza_db
+      POSTGRES_USER:     finanza_user
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finanza_user -d finanza_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL:                  postgresql+asyncpg://finanza_user:${DB_PASSWORD}@db:5432/finanza_db
+      SECRET_KEY:                    ${SECRET_KEY}
+      ACCESS_TOKEN_EXPIRE_MINUTES:   "43200"
+      DEBUG:                         "false"
+      ALLOWED_ORIGINS:               ${ALLOWED_ORIGINS}
+      ANTHROPIC_API_KEY:             ${ANTHROPIC_API_KEY}
+    depends_on:
+      db:
+        condition: service_healthy
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 2
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "19006:19006"
+    environment:
+      EXPO_PUBLIC_API_URL:             ${API_URL}
+      REACT_NATIVE_PACKAGER_HOSTNAME:  "0.0.0.0"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
