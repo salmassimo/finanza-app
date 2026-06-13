@@ -27,10 +27,10 @@ router = APIRouter()
 # Mix di fonti italiane e internazionali di finanza/mercati.
 FEEDS = [
     # Italiane
-    {"id": "sole24ore",   "nome": "Il Sole 24 Ore",  "area": "IT",  "categoria": "Finanza e Mercati",
-     "url": "https://www.ilsole24ore.com/rss/finanza-e-mercati.xml"},
-    {"id": "milanofinanza", "nome": "Milano Finanza", "area": "IT", "categoria": "Mercati",
-     "url": "https://www.milanofinanza.it/rss/mercati"},
+    {"id": "sole24ore",   "nome": "Il Sole 24 Ore",  "area": "IT",  "categoria": "Economia e Finanza",
+     "url": "https://www.ilsole24ore.com/rss/homepage.xml"},
+    {"id": "wallstreetit", "nome": "Wall Street Italia", "area": "IT", "categoria": "Mercati",
+     "url": "https://www.wallstreetitalia.com/feed/"},
     {"id": "repubblica_eco", "nome": "Repubblica Economia", "area": "IT", "categoria": "Economia",
      "url": "https://www.repubblica.it/rss/economia/rss2.0.xml"},
     # Internazionali
