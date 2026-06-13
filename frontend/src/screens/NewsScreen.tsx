@@ -6,7 +6,7 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
 import { COLORS } from '../utils/format';
-import { getNews, getDailyBriefing } from '../services/api';
+import { getNews, getDailyBriefing, translateNews } from '../services/api';
 
 // ─── Tipi ────────────────────────────────────────────────────────────────────────
 interface NewsItem {
@@ -193,6 +193,36 @@ export default function NewsScreen() {
   const [filtro, setFiltro] = useState<'TUTTE' | 'IT' | 'INT'>('TUTTE');
   const items = (data?.items || []).filter(i => filtro === 'TUTTE' || i.area === filtro);
 
+  // ── Traduzione in italiano (solo notizie internazionali) ──
+  const [tradotto, setTradotto] = useState(false);
+  const [translating, setTranslating] = useState(false);
+  const [trMap, setTrMap] = useState<Record<string, { titolo: string; sommario: string }>>({});
+
+  const toggleTraduzione = useCallback(async () => {
+    if (tradotto) { setTradotto(false); return; }
+    // Notizie internazionali non ancora tradotte
+    const daTradurre = (data?.items || []).filter(i => i.area === 'INT' && i.link && !trMap[i.link]);
+    if (daTradurre.length === 0) { setTradotto(true); return; }
+    setTranslating(true);
+    try {
+      const res = await translateNews(daTradurre.map(i => ({ titolo: i.titolo, sommario: i.sommario })));
+      const map = { ...trMap };
+      daTradurre.forEach((i, idx) => {
+        const t = res.items?.[idx];
+        if (t) map[i.link] = { titolo: t.titolo, sommario: t.sommario };
+      });
+      setTrMap(map);
+      setTradotto(true);
+    } catch {
+      // silenzioso: lascia originale
+    } finally {
+      setTranslating(false);
+    }
+  }, [tradotto, data, trMap]);
+
+  const display = (n: NewsItem) =>
+    tradotto && trMap[n.link] ? trMap[n.link] : { titolo: n.titolo, sommario: n.sommario };
+
   return (
     <ScrollView
       style={styles.container}
@@ -201,7 +231,7 @@ export default function NewsScreen() {
     >
       <BriefingCard />
 
-      {/* Filtri */}
+      {/* Filtri + traduzione */}
       <View style={styles.filterRow}>
         {(['TUTTE', 'IT', 'INT'] as const).map(f => (
           <TouchableOpacity
@@ -214,6 +244,19 @@ export default function NewsScreen() {
             </Text>
           </TouchableOpacity>
         ))}
+        <View style={{ flex: 1 }} />
+        <TouchableOpacity
+          style={[styles.trBtn, tradotto && styles.trBtnActive]}
+          onPress={toggleTraduzione}
+          disabled={translating}
+        >
+          {translating
+            ? <ActivityIndicator size="small" color={COLORS.primary} />
+            : <Ionicons name="language" size={15} color={tradotto ? COLORS.primary : COLORS.subtext} />}
+          <Text style={[styles.trText, tradotto && styles.trTextActive]}>
+            {translating ? 'Traduco…' : tradotto ? 'Originale' : 'Traduci'}
+          </Text>
+        </TouchableOpacity>
       </View>
 
       {isLoading ? (
@@ -221,24 +264,31 @@ export default function NewsScreen() {
       ) : items.length === 0 ? (
         <Text style={styles.empty}>Nessuna notizia disponibile.</Text>
       ) : (
-        items.map((n, i) => (
-          <TouchableOpacity key={i} style={styles.newsCard} onPress={() => openLink(n.link)}>
-            <View style={styles.newsMeta}>
-              <View style={[styles.areaBadge, { backgroundColor: (n.area === 'IT' ? COLORS.success : COLORS.primary) + '22' }]}>
-                <Text style={[styles.areaText, { color: n.area === 'IT' ? COLORS.success : COLORS.primary }]}>
-                  {n.area === 'IT' ? '🇮🇹' : '🌍'} {n.fonte}
-                </Text>
+        items.map((n, i) => {
+          const d = display(n);
+          const isTr = tradotto && !!trMap[n.link];
+          return (
+            <TouchableOpacity key={i} style={styles.newsCard} onPress={() => openLink(n.link)}>
+              <View style={styles.newsMeta}>
+                <View style={[styles.areaBadge, { backgroundColor: (n.area === 'IT' ? COLORS.success : COLORS.primary) + '22' }]}>
+                  <Text style={[styles.areaText, { color: n.area === 'IT' ? COLORS.success : COLORS.primary }]}>
+                    {n.area === 'IT' ? '🇮🇹' : '🌍'} {n.fonte}
+                  </Text>
+                </View>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  {isTr && <Text style={styles.trTag}>tradotto</Text>}
+                  {!!n.pubblicato && <Text style={styles.newsTime}>{timeAgo(n.pubblicato)}</Text>}
+                </View>
               </View>
-              {!!n.pubblicato && <Text style={styles.newsTime}>{timeAgo(n.pubblicato)}</Text>}
-            </View>
-            <Text style={styles.newsTitle}>{n.titolo}</Text>
-            {!!n.sommario && <Text style={styles.newsSummary} numberOfLines={2}>{n.sommario}</Text>}
-            <View style={styles.readMore}>
-              <Text style={styles.readMoreText}>Leggi</Text>
-              <Ionicons name="open-outline" size={12} color={COLORS.primary} />
-            </View>
-          </TouchableOpacity>
-        ))
+              <Text style={styles.newsTitle}>{d.titolo}</Text>
+              {!!d.sommario && <Text style={styles.newsSummary} numberOfLines={2}>{d.sommario}</Text>}
+              <View style={styles.readMore}>
+                <Text style={styles.readMoreText}>Leggi</Text>
+                <Ionicons name="open-outline" size={12} color={COLORS.primary} />
+              </View>
+            </TouchableOpacity>
+          );
+        })
       )}
 
       {data && (
@@ -300,6 +350,11 @@ const styles = StyleSheet.create({
   filterChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
   filterText: { color: COLORS.subtext, fontSize: 12, fontWeight: '600' },
   filterTextActive: { color: COLORS.primary },
+  trBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 7, minWidth: 96, justifyContent: 'center' },
+  trBtnActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  trText: { color: COLORS.subtext, fontSize: 12, fontWeight: '700' },
+  trTextActive: { color: COLORS.primary },
+  trTag: { color: COLORS.primary, fontSize: 9, fontWeight: '700', fontStyle: 'italic' },
 
   // News
   newsCard: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 10, padding: 14, marginBottom: 10 },

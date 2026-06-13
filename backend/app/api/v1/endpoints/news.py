@@ -105,6 +105,24 @@ class BriefingResponse(BaseModel):
     fonti_usate: list[str]
 
 
+class TranslateItemIn(BaseModel):
+    titolo: str
+    sommario: str = ""
+
+
+class TranslateIn(BaseModel):
+    items: list[TranslateItemIn]
+
+
+class TranslateItemOut(BaseModel):
+    titolo: str
+    sommario: str
+
+
+class TranslateOut(BaseModel):
+    items: list[TranslateItemOut]
+
+
 # ─── Fetch RSS ─────────────────────────────────────────────────────────────────────
 
 async def _fetch_feed(client: httpx.AsyncClient, feed: dict, per_feed: int) -> tuple[list[dict], bool]:
@@ -167,6 +185,56 @@ async def get_news(current_user=Depends(get_current_user)):
         n_fonti_ok=ok,
         n_fonti_errore=err,
     )
+
+
+@router.post("/translate", response_model=TranslateOut)
+async def translate_news(body: TranslateIn, current_user=Depends(get_current_user)):
+    """Traduce in italiano titolo + sommario di un elenco di notizie (max 40)."""
+    items = body.items[:40]
+    if not items:
+        return TranslateOut(items=[])
+
+    # Prepara la lista numerata per il modello
+    blocchi = []
+    for i, it in enumerate(items):
+        blocchi.append(f"[{i}] TITOLO: {it.titolo}\nSOMMARIO: {it.sommario}")
+    payload = "\n\n".join(blocchi)
+
+    system = (
+        "Sei un traduttore professionale di notizie finanziarie. "
+        "Traduci in italiano naturale e scorrevole, mantenendo i nomi propri, i ticker e gli acronimi. "
+        "Non aggiungere commenti."
+    )
+    prompt = f"""Traduci in italiano le seguenti {len(items)} notizie.
+Rispondi SOLO con un array JSON valido, un oggetto per notizia, nello stesso ordine:
+[{{"titolo": "...", "sommario": "..."}}, ...]
+Se il sommario è vuoto, lascia "sommario" vuoto.
+
+NOTIZIE:
+{payload}"""
+
+    text = await _call_claude(system=system, messages=[{"role": "user", "content": prompt}], max_tokens=3000)
+
+    if "```" in text:
+        parts = text.split("```")
+        text = parts[1] if len(parts) > 1 else parts[0]
+        if text.startswith("json"):
+            text = text[4:]
+
+    import json
+    try:
+        arr = json.loads(text.strip())
+    except Exception:
+        raise HTTPException(502, "Traduzione non interpretabile. Riprova.")
+
+    out = []
+    for i in range(len(items)):
+        t = arr[i] if i < len(arr) and isinstance(arr[i], dict) else {}
+        out.append(TranslateItemOut(
+            titolo=t.get("titolo") or items[i].titolo,
+            sommario=t.get("sommario") or items[i].sommario,
+        ))
+    return TranslateOut(items=out)
 
 
 @router.post("/daily-briefing", response_model=BriefingResponse)

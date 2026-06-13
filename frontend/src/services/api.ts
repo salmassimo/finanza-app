@@ -256,6 +256,9 @@ export const getNews = () =>
 export const getDailyBriefing = () =>
   api.post('/news/daily-briefing').then(r => r.data);
 
+export const translateNews = (items: Array<{ titolo: string; sommario: string }>) =>
+  api.post('/news/translate', { items }).then(r => r.data);
+
 // ── AI ADVISOR ────────────────────────────────────────
 export const getAnalisiAdvisor = () =>
   api.post('/advisor/analisi').then(r => r.data);
