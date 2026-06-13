@@ -249,6 +249,13 @@ export const createObiettivo = (data: {
 export const deleteObiettivo = (id: string) =>
   api.delete(`/obiettivi/${id}`).then(r => r.data);
 
+// ── NEWS & MERCATI ────────────────────────────────────
+export const getNews = () =>
+  api.get('/news/').then(r => r.data);
+
+export const getDailyBriefing = () =>
+  api.post('/news/daily-briefing').then(r => r.data);
+
 // ── AI ADVISOR ────────────────────────────────────────
 export const getAnalisiAdvisor = () =>
   api.post('/advisor/analisi').then(r => r.data);
