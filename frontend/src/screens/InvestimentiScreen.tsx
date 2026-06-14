@@ -108,6 +108,7 @@ function toChartPoints(raw: any[], mode: 'valore' | 'pl'): ChartPoint[] {
       return {
         value: mode === 'valore' ? n(d.valore_mercato) : n(d.var_eur),
         label: dt.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' }),
+        dateFull: dt.toLocaleDateString('it-IT'),
       };
     });
 }
@@ -157,6 +158,7 @@ function PosizioneChart({ posId }: { posId: string }) {
           height={160}
           color={lineColor}
           formatY={fmtYValue}
+          tooltipFormat={fmt}
         />
       )}
     </View>
@@ -221,6 +223,7 @@ function OverallChart({ storico }: { storico: any[] }) {
           height={200}
           color={lineColor}
           formatY={fmtYValue}
+          tooltipFormat={fmt}
         />
       )}
     </View>

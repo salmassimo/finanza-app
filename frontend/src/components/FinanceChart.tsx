@@ -3,10 +3,10 @@
  * Asse Y sempre parametrizzato al range reale dei dati.
  * Asse X con date formattate, spaziatura automatica.
  */
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import Svg, {
-  Path, Line, Text as SvgText, Defs, LinearGradient, Stop, Rect,
+  Path, Line, Text as SvgText, Defs, LinearGradient, Stop, Rect, Circle,
 } from 'react-native-svg';
 import { COLORS } from '../utils/format';
 
@@ -15,6 +15,7 @@ import { COLORS } from '../utils/format';
 export interface ChartPoint {
   value: number;
   label: string;
+  dateFull?: string;   // data completa per il popup (es. 13/06/2026)
 }
 
 interface Props {
@@ -25,6 +26,8 @@ interface Props {
   formatY?: (v: number) => string;
   showGradient?: boolean;
   yLevels?: number;
+  showDots?: boolean;                       // mostra i punti cliccabili (default true)
+  tooltipFormat?: (v: number) => string;    // formato valore nel popup (default formatY)
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -97,8 +100,11 @@ export default function FinanceChart({
   formatY   = fmtYValue,
   showGradient = true,
   yLevels   = 5,
+  showDots  = true,
+  tooltipFormat,
 }: Props) {
 
+  const [sel, setSel] = useState<number | null>(null);
   const chartW = Math.max(width  - PAD.left - PAD.right,  10);
   const chartH = Math.max(height - PAD.top  - PAD.bottom, 10);
 
@@ -213,6 +219,30 @@ export default function FinanceChart({
         />
       )}
 
+      {/* Punti cliccabili (aggiornamenti) */}
+      {showDots && coords.map((c, i) => (
+        isFinite(c.x) && isFinite(c.y) ? (
+          <Circle
+            key={`dot-${i}`}
+            cx={c.x} cy={c.y} r={i === sel ? 4 : 2.3}
+            fill={i === sel ? safeColor : COLORS.surface}
+            stroke={safeColor} strokeWidth={i === sel ? 2 : 1}
+          />
+        ) : null
+      ))}
+      {/* Aree di tap invisibili (più grandi del punto) */}
+      {showDots && coords.map((c, i) => (
+        isFinite(c.x) && isFinite(c.y) ? (
+          <Circle
+            key={`hit-${i}`}
+            cx={c.x} cy={c.y} r={14}
+            fill={safeColor} fillOpacity={0.001}
+            onPress={() => setSel(prev => (prev === i ? null : i))}
+            onPressIn={() => setSel(i)}
+          />
+        ) : null
+      ))}
+
       {/* Etichette asse X */}
       {xLabels.map((l, i) => (
         <SvgText
@@ -225,6 +255,34 @@ export default function FinanceChart({
           {l.label}
         </SvgText>
       ))}
+
+      {/* Popup prezzo sul punto selezionato */}
+      {sel != null && sel < coords.length && isFinite(coords[sel].x) && (() => {
+        const c = coords[sel];
+        const p = points[sel];
+        const boxW = 120, boxH = 40;
+        let bx = c.x - boxW / 2;
+        bx = Math.max(PAD.left, Math.min(bx, PAD.left + chartW - boxW));
+        let by = c.y - boxH - 10;
+        if (by < PAD.top) by = c.y + 12;
+        const vstr = (tooltipFormat || formatY)(p.value);
+        return (
+          <React.Fragment>
+            <Line
+              x1={c.x} y1={PAD.top} x2={c.x} y2={PAD.top + chartH}
+              stroke={safeColor} strokeWidth={1} strokeDasharray="3 3" opacity={0.5}
+            />
+            <Rect x={bx} y={by} width={boxW} height={boxH} rx={6}
+              fill="#0B1322" stroke={safeColor} strokeWidth={1} />
+            <SvgText x={bx + boxW / 2} y={by + 16} fontSize={9} fill={COLORS.subtext} textAnchor="middle">
+              {p.dateFull || p.label}
+            </SvgText>
+            <SvgText x={bx + boxW / 2} y={by + 31} fontSize={12} fontWeight="700" fill={COLORS.text} textAnchor="middle">
+              {vstr}
+            </SvgText>
+          </React.Fragment>
+        );
+      })()}
 
       {/* Bordo sinistro asse Y */}
       <Line

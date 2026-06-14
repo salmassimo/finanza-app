@@ -65,6 +65,7 @@ function PatrimonioChart() {
     (storico as any[]).map((d: any) => ({
       value: n(d.patrimonio_netto),
       label: d.label,
+      dateFull: d.label,
     })),
     [storico]
   );
@@ -105,6 +106,7 @@ function PatrimonioChart() {
         height={190}
         color={lineColor}
         formatY={fmtYValue}
+        tooltipFormat={fmt}
       />
     </View>
   );

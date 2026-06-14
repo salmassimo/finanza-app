@@ -10,9 +10,10 @@ export default function BeniRealiScreen() {
 
   if (loadImm || loadOr) return <LoadingView />;
 
-  const totImmobili = immobili?.reduce((s: number, i: any) => s + i.valore_corrente, 0) || 0;
-  const totOrologi  = orologi?.reduce((s: number, o: any) => s + (o.stima_min + o.stima_max) / 2, 0) || 0;
-  const totEquity   = immobili?.reduce((s: number, i: any) => s + (i.valore_corrente - i.mutuo_residuo), 0) || 0;
+  const n = (v: any): number => Number(v) || 0;
+  const totImmobili = immobili?.reduce((s: number, i: any) => s + n(i.valore_corrente), 0) || 0;
+  const totOrologi  = orologi?.reduce((s: number, o: any) => s + (n(o.stima_min) + n(o.stima_max)) / 2, 0) || 0;
+  const totEquity   = immobili?.reduce((s: number, i: any) => s + (n(i.valore_corrente) - n(i.mutuo_residuo)), 0) || 0;
 
   return (
     <ScrollView style={s.container}>
@@ -31,8 +32,8 @@ export default function BeniRealiScreen() {
         {/* Immobili */}
         <Text style={s.sectionTitle}>IMMOBILI</Text>
         {immobili?.map((im: any) => {
-          const equity = im.valore_corrente - im.mutuo_residuo;
-          const ltv    = (im.mutuo_residuo / im.valore_corrente) * 100;
+          const equity = n(im.valore_corrente) - n(im.mutuo_residuo);
+          const ltv    = n(im.valore_corrente) ? (n(im.mutuo_residuo) / n(im.valore_corrente)) * 100 : 0;
           const ltvCol = ltv > 80 ? COLORS.danger : ltv > 50 ? COLORS.warning : COLORS.success;
           return (
             <Card key={im.id}>
@@ -80,7 +81,7 @@ export default function BeniRealiScreen() {
               <RowItem label="Stima massima" value={fmt(or.stima_max)} />
               <View style={s.totRow}>
                 <Text style={s.totLabel}>Valore medio stimato</Text>
-                <Text style={[s.totValue, { color: COLORS.warning }]}>{fmt((or.stima_min + or.stima_max) / 2)}</Text>
+                <Text style={[s.totValue, { color: COLORS.warning }]}>{fmt((n(or.stima_min) + n(or.stima_max)) / 2)}</Text>
               </View>
             </Card>
           ))}
