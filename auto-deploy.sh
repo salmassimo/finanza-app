@@ -10,6 +10,9 @@
 # ============================================================
 set -e
 
+# PATH robusto per esecuzione da Task Scheduler (cron ha PATH minimale)
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH
+
 APP_DIR=/var/services/homes/sistema/finanza-app
 REPO=salmassimo/finanza-app
 BRANCH=master
