@@ -45,7 +45,8 @@ services:
       - "19006:19006"
     environment:
       EXPO_PUBLIC_API_URL:             ${API_URL}
-      REACT_NATIVE_PACKAGER_HOSTNAME:  "0.0.0.0"
+      REACT_NATIVE_PACKAGER_HOSTNAME:  "192.168.178.106"
+    command: ["npm", "run", "web", "--", "--host", "lan", "--port", "19006"]
     depends_on:
       - backend
 
