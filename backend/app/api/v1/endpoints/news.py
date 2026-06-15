@@ -40,6 +40,21 @@ FEEDS = [
      "url": "http://feeds.marketwatch.com/marketwatch/topstories/"},
     {"id": "yahoofin",    "nome": "Yahoo Finance",   "area": "INT", "categoria": "News",
      "url": "https://finance.yahoo.com/news/rssindex"},
+    # Blog di economisti / finanza famosi
+    {"id": "projsynd",  "nome": "Project Syndicate", "area": "INT", "categoria": "Economisti",
+     "url": "https://www.project-syndicate.org/rss"},
+    {"id": "noahpinion", "nome": "Noahpinion (N. Smith)", "area": "INT", "categoria": "Economisti",
+     "url": "https://www.noahpinion.blog/feed"},
+    {"id": "margrev",   "nome": "Marginal Revolution (Cowen)", "area": "INT", "categoria": "Economisti",
+     "url": "https://marginalrevolution.com/feed"},
+    {"id": "awealth",   "nome": "A Wealth of Common Sense", "area": "INT", "categoria": "Investitori",
+     "url": "https://awealthofcommonsense.com/feed/"},
+    {"id": "ritholtz",  "nome": "The Big Picture (Ritholtz)", "area": "INT", "categoria": "Investitori",
+     "url": "https://ritholtz.com/feed/"},
+    {"id": "lavoce",    "nome": "Lavoce.info", "area": "IT", "categoria": "Economisti",
+     "url": "https://www.lavoce.info/feed/"},
+    {"id": "phastidio", "nome": "Phastidio (Seminerio)", "area": "IT", "categoria": "Economia",
+     "url": "https://phastidio.net/feed/"},
 ]
 
 HEADERS = {
@@ -178,7 +193,7 @@ async def _aggrega_news(per_feed: int = 8) -> tuple[list[dict], int, int]:
 @router.get("/", response_model=NewsResponse)
 async def get_news(current_user=Depends(get_current_user)):
     """Aggrega le ultime notizie di finanza dai feed configurati (IT + INT)."""
-    items, ok, err = await _aggrega_news(per_feed=8)
+    items, ok, err = await _aggrega_news(per_feed=6)
     return NewsResponse(
         items=[NewsItem(**i) for i in items],
         aggiornato=datetime.now(timezone.utc).isoformat(),

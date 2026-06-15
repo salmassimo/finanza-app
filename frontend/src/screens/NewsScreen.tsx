@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity,
   ActivityIndicator, Linking, RefreshControl, Platform,
@@ -193,32 +193,44 @@ export default function NewsScreen() {
   const [filtro, setFiltro] = useState<'TUTTE' | 'IT' | 'INT'>('TUTTE');
   const items = (data?.items || []).filter(i => filtro === 'TUTTE' || i.area === filtro);
 
-  // ── Traduzione in italiano (solo notizie internazionali) ──
-  const [tradotto, setTradotto] = useState(false);
+  // ── Traduzione automatica in italiano (solo notizie internazionali) ──
+  const [tradotto, setTradotto] = useState(true);   // ON di default: traduzione automatica
   const [translating, setTranslating] = useState(false);
   const [trMap, setTrMap] = useState<Record<string, { titolo: string; sommario: string }>>({});
 
-  const toggleTraduzione = useCallback(async () => {
-    if (tradotto) { setTradotto(false); return; }
-    // Notizie internazionali non ancora tradotte
-    const daTradurre = (data?.items || []).filter(i => i.area === 'INT' && i.link && !trMap[i.link]);
-    if (daTradurre.length === 0) { setTradotto(true); return; }
+  // Traduce le notizie INT non ancora tradotte (max 40 per chiamata)
+  const ensureTranslated = useCallback(async () => {
+    const daTradurre = (data?.items || [])
+      .filter(i => i.area === 'INT' && i.link && !trMap[i.link])
+      .slice(0, 40);
+    if (daTradurre.length === 0) return;
     setTranslating(true);
     try {
       const res = await translateNews(daTradurre.map(i => ({ titolo: i.titolo, sommario: i.sommario })));
-      const map = { ...trMap };
-      daTradurre.forEach((i, idx) => {
-        const t = res.items?.[idx];
-        if (t) map[i.link] = { titolo: t.titolo, sommario: t.sommario };
+      setTrMap(prev => {
+        const map = { ...prev };
+        daTradurre.forEach((i, idx) => {
+          const t = res.items?.[idx];
+          if (t) map[i.link] = { titolo: t.titolo, sommario: t.sommario };
+        });
+        return map;
       });
-      setTrMap(map);
-      setTradotto(true);
     } catch {
-      // silenzioso: lascia originale
+      // silenzioso: lascia l'originale
     } finally {
       setTranslating(false);
     }
-  }, [tradotto, data, trMap]);
+  }, [data, trMap]);
+
+  // Auto-traduzione all'arrivo delle notizie (se attiva)
+  useEffect(() => {
+    if (tradotto && !translating && data?.items?.length) ensureTranslated();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, tradotto]);
+
+  const toggleTraduzione = useCallback(() => {
+    setTradotto(v => !v);   // l'effetto sopra tradurrà se serve
+  }, []);
 
   const display = (n: NewsItem) =>
     tradotto && trMap[n.link] ? trMap[n.link] : { titolo: n.titolo, sommario: n.sommario };
