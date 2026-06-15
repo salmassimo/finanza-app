@@ -871,16 +871,48 @@ async def importa_unicredit_mutuo(
             await db.delete(r)
         await db.flush()
 
-    # Inserisci piano ammortamento
+    # Parsa le rate in un dizionario per numero (il PDF può saltare righe sui
+    # cambi pagina → le ricostruiamo dalla formula di ammortamento).
+    parsed: dict[int, dict] = {}
     for line in rate_lines:
-        numero  = int(line[0])
-        scad    = datetime.strptime(line[1], "%d/%m/%Y").date()
-        q_cap   = Decimal(line[2].replace(".", "").replace(",", "."))
-        q_int   = Decimal(line[3].replace(".", "").replace(",", "."))
-        totale  = Decimal(line[4].replace(".", "").replace(",", "."))
+        numero = int(line[0])
+        parsed[numero] = {
+            "scad":   datetime.strptime(line[1], "%d/%m/%Y").date(),
+            "q_cap":  Decimal(line[2].replace(".", "").replace(",", ".")),
+            "q_int":  Decimal(line[3].replace(".", "").replace(",", ".")),
+            "totale": Decimal(line[4].replace(".", "").replace(",", ".")),
+        }
+
+    from calendar import monthrange as _monthrange
+
+    def _add_months(d: date, k: int) -> date:
+        m0 = d.month - 1 + k
+        y = d.year + m0 // 12
+        mth = m0 % 12 + 1
+        return date(y, mth, min(d.day, _monthrange(y, mth)[1]))
+
+    n_max       = max(rate_totali, max(parsed.keys()))
+    first_date  = parsed[min(parsed.keys())]["scad"]
+    i_mensile   = (Decimal(str(tasso_valore_pct)) / Decimal("100") / Decimal("12")) if tasso_valore_pct else Decimal("0")
+
+    cumulativo_cap = Decimal("0")
+    ricostruite = 0
+    for n in range(1, n_max + 1):
+        r = parsed.get(n)
+        if r is not None:
+            q_cap, q_int, totale, scad = r["q_cap"], r["q_int"], r["totale"], r["scad"]
+        else:
+            # Rata mancante (salto pagina PDF): ricostruzione French amortization
+            residuo_before = capitale_erogato - cumulativo_cap
+            q_int  = (residuo_before * i_mensile).quantize(Decimal("0.01"))
+            q_cap  = (rata_mensile - q_int).quantize(Decimal("0.01"))
+            totale = rata_mensile
+            scad   = _add_months(first_date, n - 1)
+            ricostruite += 1
+        cumulativo_cap += q_cap
         db.add(PianoAmmortamento(
             mutuo_id=mutuo.id,
-            numero_rata=numero,
+            numero_rata=n,
             data_scadenza=scad,
             quota_capitale=q_cap,
             quota_interessi=q_int,
@@ -891,7 +923,9 @@ async def importa_unicredit_mutuo(
     await db.commit()
     return {
         "numero_contratto": numero_contratto,
-        "rate_importate": len(rate_lines),
+        "rate_importate": len(parsed),
+        "rate_ricostruite": ricostruite,
+        "rate_totali_piano": n_max,
         "capitale_erogato": str(capitale_erogato),
         "capitale_residuo": str(capitale_residuo),
     }
