@@ -166,6 +166,7 @@ const importCSV = async (entity: string, file: File) => {
 };
 
 export const importaFinecoPortafoglio = (f: File) => importCSV('fineco-portafoglio', f);
+export const importaFinecoConto      = (f: File) => importCSV('fineco-conto', f);
 export const importaConti           = (f: File) => importCSV('conti', f);
 export const importaMutui           = (f: File) => importCSV('mutui', f);
 export const importaPianoAmmortamento = (f: File) => importCSV('piano-ammortamento', f);

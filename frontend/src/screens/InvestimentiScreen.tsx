@@ -638,6 +638,22 @@ export default function InvestimentiScreen() {
   const backfill  = useBackfillPrezzi();
   const [filtro, setFiltro]       = useState<'tutti' | 'fineco' | 'revolut'>('tutti');
   const [backfillMsg, setBackfillMsg] = useState<string | null>(null);
+  const [aggiornaMsg, setAggiornaMsg] = useState<string | null>(null);
+
+  const handleAggiorna = () => {
+    setAggiornaMsg(null);
+    aggiorna.mutate(undefined, {
+      onSuccess: (data: any) => {
+        const n_ok = data?.aggiornati?.length || 0;
+        const errs = data?.errori || [];
+        setAggiornaMsg(
+          `✓ ${n_ok} prezzi aggiornati` +
+          (errs.length ? ` · ⚠️ non trovati: ${errs.join(', ')}` : '')
+        );
+      },
+      onError: () => setAggiornaMsg('✗ Errore aggiornamento prezzi'),
+    });
+  };
 
   if (isLoading) return (
     <View style={{ flex: 1, backgroundColor: COLORS.bg, justifyContent: 'center', alignItems: 'center' }}>
@@ -703,7 +719,7 @@ export default function InvestimentiScreen() {
         <View style={s.actionRow}>
           <TouchableOpacity
             style={[s.actionBtn, s.actionBtnPrimary, aggiorna.isPending && { opacity: 0.6 }]}
-            onPress={() => aggiorna.mutate(undefined)}
+            onPress={handleAggiorna}
             disabled={aggiorna.isPending}
           >
             {aggiorna.isPending ? <ActivityIndicator size="small" color="#000" /> : <Ionicons name="refresh" size={13} color="#000" />}
@@ -720,6 +736,7 @@ export default function InvestimentiScreen() {
           </TouchableOpacity>
         </View>
 
+        {aggiornaMsg  && <Text style={[s.ultimoAgg, { color: aggiornaMsg.startsWith('✓') ? COLORS.success : COLORS.danger, marginBottom: 6 }]}>{aggiornaMsg}</Text>}
         {ultimoStr    && <Text style={s.ultimoAgg}>⏱ Ultimo aggiornamento: {ultimoStr}</Text>}
         {backfillMsg  && <Text style={[s.ultimoAgg, { color: backfillMsg.startsWith('✓') ? COLORS.success : COLORS.danger, marginBottom: 8 }]}>{backfillMsg}</Text>}
 

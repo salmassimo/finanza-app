@@ -198,23 +198,26 @@ export default function NewsScreen() {
   const [translating, setTranslating] = useState(false);
   const [trMap, setTrMap] = useState<Record<string, { titolo: string; sommario: string }>>({});
 
-  // Traduce le notizie INT non ancora tradotte (max 40 per chiamata)
+  // Traduce le notizie INT non ancora tradotte, a blocchi piccoli per evitare
+  // risposte troncate (JSON non valido) → la UI si aggiorna progressivamente.
   const ensureTranslated = useCallback(async () => {
-    const daTradurre = (data?.items || [])
-      .filter(i => i.area === 'INT' && i.link && !trMap[i.link])
-      .slice(0, 40);
+    const daTradurre = (data?.items || []).filter(i => i.area === 'INT' && i.link && !trMap[i.link]);
     if (daTradurre.length === 0) return;
     setTranslating(true);
     try {
-      const res = await translateNews(daTradurre.map(i => ({ titolo: i.titolo, sommario: i.sommario })));
-      setTrMap(prev => {
-        const map = { ...prev };
-        daTradurre.forEach((i, idx) => {
-          const t = res.items?.[idx];
-          if (t) map[i.link] = { titolo: t.titolo, sommario: t.sommario };
+      const CHUNK = 12;
+      for (let off = 0; off < daTradurre.length; off += CHUNK) {
+        const batch = daTradurre.slice(off, off + CHUNK);
+        const res = await translateNews(batch.map(i => ({ titolo: i.titolo, sommario: i.sommario })));
+        setTrMap(prev => {
+          const map = { ...prev };
+          batch.forEach((i, idx) => {
+            const t = res.items?.[idx];
+            if (t) map[i.link] = { titolo: t.titolo, sommario: t.sommario };
+          });
+          return map;
         });
-        return map;
-      });
+      }
     } catch {
       // silenzioso: lascia l'originale
     } finally {

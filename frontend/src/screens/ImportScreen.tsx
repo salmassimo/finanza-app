@@ -8,7 +8,7 @@ import { COLORS } from '../utils/format';
 import {
   importaConti, importaMutui, importaPianoAmmortamento,
   importaImmobili, importaPortafoglio, importaOrologi, importaMovimenti,
-  importaFinecoPortafoglio,
+  importaFinecoPortafoglio, importaFinecoConto,
   importaUnicreditConto, importaUnicreditCarta, importaUnicreditMutuo,
   importaCaMutuo,
   importaRevolutConto, importaRevolutDeposito,
@@ -313,6 +313,19 @@ function UniCreditCard({ cfg }: { cfg: UniCreditCardConfig }) {
   );
 }
 
+const FINECO_CARDS: UniCreditCardConfig[] = [
+  {
+    label: 'Fineco — Conto Corrente',
+    badge: 'XLSX',
+    accept: '.xls,.xlsx',
+    description:
+      'Esporta da Fineco → Conto Corrente → Movimenti → Esporta Excel (movements_*.xlsx).\n' +
+      'Importa i movimenti, crea il conto C/C Fineco e aggiorna il saldo (Saldo Finale). Dedup automatico, ri-importabile in futuro.',
+    fn: importaFinecoConto,
+    borderColor: '#00B0B9',
+  },
+];
+
 const REVOLUT_CARDS: UniCreditCardConfig[] = [
   {
     label: 'Revolut — Conto Corrente',
@@ -554,6 +567,7 @@ export default function ImportScreen() {
 
       <Text style={s.sectionHeader}>FINECO — IMPORT DIRETTO</Text>
       <FinecoCard />
+      {FINECO_CARDS.map(c => <UniCreditCard key={c.label} cfg={c} />)}
 
       <Text style={s.sectionHeader}>REVOLUT — IMPORT DIRETTO</Text>
       {REVOLUT_CARDS.map(c => <UniCreditCard key={c.label} cfg={c} />)}

@@ -1569,3 +1569,135 @@ async def importa_revolut_deposito(
         "var_pct": str(var_pct),
         "tasso_lordo": str(tasso),
     }
+
+
+# ── IMPORT FINECO CONTO CORRENTE ─────────────────────────────────────────────
+
+@router.post("/fineco-conto")
+async def importa_fineco_conto(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Importa l'estratto del conto corrente Fineco (movements_*.xlsx).
+    Header: Data_Operazione | Data_Valuta | Entrate | Uscite | Descrizione |
+    Descrizione_Completa | Stato | Moneymap. 'Saldo Finale: X' nell'intestazione.
+    Stessa logica degli altri conti: dedup external_id, auto-categorizzazione,
+    snapshot saldo. Il conto viene incluso nei calcoli liquidità (tipo conto_corrente).
+    """
+    from app.services.categorizza import auto_categorizza
+    from fastapi import HTTPException
+    import re
+
+    content = await file.read()
+    suffix = ".xlsx" if file.filename.lower().endswith(".xlsx") else ".xls"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
+        f.write(content)
+        tmp = f.name
+    try:
+        engine = "openpyxl" if suffix == ".xlsx" else "xlrd"
+        df = pd.read_excel(tmp, sheet_name=0, header=None, engine=engine)
+    except Exception as e:
+        raise HTTPException(400, f"Errore apertura file: {e}")
+    finally:
+        os.unlink(tmp)
+
+    # Saldo finale + riga header
+    saldo_finale = None
+    header_row = None
+    for idx, row in df.iterrows():
+        joined = " ".join(str(v) for v in row if v is not None and str(v) != "nan")
+        if saldo_finale is None and "Saldo Finale" in joined:
+            m = re.search(r"([\d\.]+,\d+)", joined)
+            if m:
+                saldo_finale = Decimal(m.group(1).replace(".", "").replace(",", "."))
+        if any(str(v).strip() == "Data_Operazione" for v in row):
+            header_row = idx
+            break
+    if header_row is None:
+        raise HTTPException(400, "Header 'Data_Operazione' non trovato nel file")
+
+    headers = [str(v).strip() for v in df.iloc[header_row]]
+    col = {name: i for i, name in enumerate(headers)}
+
+    conto = await _get_or_create_conto(
+        db, current_user.id, "Conto Corrente Fineco", "conto_corrente", "Fineco"
+    )
+
+    if saldo_finale is not None:
+        db.add(SaldoSnapshot(
+            conto_id=conto.id, saldo=saldo_finale,
+            fonte="fineco_conto_xls", rilevato_at=datetime.utcnow(),
+        ))
+
+    def _to_date(v):
+        if v is None:
+            return None
+        if not isinstance(v, str) and hasattr(v, "date"):
+            try:
+                return v.date()
+            except Exception:
+                return None
+        return _parse_date_it(str(v))
+
+    def _to_dec(v):
+        if v is None or str(v).strip().lower() in ("", "nan", "nat"):
+            return None
+        try:
+            return Decimal(str(v)).quantize(Decimal("0.01"))
+        except Exception:
+            return None
+
+    importati, saltati, errori = 0, 0, []
+    for i, r in df.iloc[header_row + 1:].iterrows():
+        try:
+            data_op = _to_date(r[col["Data_Operazione"]]) if "Data_Operazione" in col else None
+            if not data_op:
+                continue
+            data_val = _to_date(r[col["Data_Valuta"]]) if "Data_Valuta" in col else None
+            entrate  = _to_dec(r[col["Entrate"]]) if "Entrate" in col else None
+            uscite   = _to_dec(r[col["Uscite"]]) if "Uscite" in col else None
+            descr      = str(r[col["Descrizione"]]).strip() if "Descrizione" in col else ""
+            descr_full = str(r[col["Descrizione_Completa"]]).strip() if "Descrizione_Completa" in col else ""
+            moneymap   = str(r[col["Moneymap"]]).strip() if "Moneymap" in col else ""
+            descr      = "" if descr.lower() == "nan" else descr
+            descr_full = "" if descr_full.lower() == "nan" else descr_full
+            moneymap   = "" if moneymap.lower() == "nan" else moneymap
+
+            if entrate is not None and entrate != 0:
+                importo = entrate
+            elif uscite is not None and uscite != 0:
+                importo = uscite if uscite < 0 else -uscite
+            else:
+                continue
+
+            ext_id = _ext_id(["fineco_cc", data_op, importo, descr[:50]])
+            exists = await db.execute(select(Movimento).where(Movimento.external_id == ext_id))
+            if exists.scalar_one_or_none():
+                saltati += 1
+                continue
+
+            tipo = TipoMovimento.entrata if importo > 0 else TipoMovimento.uscita
+            cat_nome = auto_categorizza(descr or descr_full, moneymap)
+            cat_id = await _get_categoria_id(db, cat_nome)
+
+            db.add(Movimento(
+                utente_id=current_user.id, conto_id=conto.id,
+                tipo=tipo, importo=importo,
+                descrizione=(descr or descr_full)[:250],
+                data_operazione=data_op, data_valuta=data_val,
+                causale=None, is_carta_credito=False,
+                fonte="fineco_conto", external_id=ext_id, categoria_id=cat_id,
+            ))
+            importati += 1
+        except Exception as e:
+            errori.append(f"Riga {i}: {e}")
+
+    await db.commit()
+    return {
+        "importati": importati,
+        "saltati": saltati,
+        "errori": errori[:10],
+        "saldo_finale": float(saldo_finale) if saldo_finale is not None else None,
+    }

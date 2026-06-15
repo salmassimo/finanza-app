@@ -95,6 +95,17 @@ export default function OverviewScreen() {
   // Calcola totale portafoglio da lista posizioni se patrimonio non disponibile
   const portFallback = (port as any[]).reduce((s: number, p: any) => s + n(p.valore_mercato), 0);
 
+  // ── Equity disponibile = liquidità + portafoglio al netto della tassazione
+  //    sulle plusvalenze (26% sul guadagno netto del portafoglio) ──
+  const ALIQUOTA_CG  = 0.26;
+  const portMktList  = (port as any[]).reduce((s: number, p: any) => s + n(p.valore_mercato), 0);
+  const portCarList  = (port as any[]).reduce((s: number, p: any) => s + n(p.valore_carico), 0);
+  const portMktEq    = portMktList > 0 ? portMktList : portTotale;
+  const plusvalenza  = Math.max(0, portMktList - portCarList);
+  const tasseCG      = plusvalenza * ALIQUOTA_CG;
+  const portNetto    = portMktEq - tasseCG;
+  const equity       = liquidita + portNetto;
+
   const today = new Date();
   const meseCorrente = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
   const mesiCount = (mesi as string[]).length;
@@ -132,6 +143,23 @@ export default function OverviewScreen() {
           <KpiCard label="PORTAFOGLIO" value={fmtShort(portTotale || portFallback)}
             color={COLORS.primary}
             sub={`Fineco ${fmtShort(portFineco)}`} />
+        </View>
+
+        {/* Equity disponibile (netto tasse) */}
+        <View style={st.equityBox}>
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Text style={st.equityLabel}>EQUITY DISPONIBILE</Text>
+            <Ionicons name="cash-outline" size={16} color={COLORS.success} />
+          </View>
+          <Text style={st.equityVal}>{fmt(equity)}</Text>
+          <Text style={st.equitySub}>
+            Liquidità {fmtShort(liquidita)} + Portafoglio netto {fmtShort(portNetto)}
+          </Text>
+          {tasseCG > 0 && (
+            <Text style={st.equityTax}>
+              − Tasse plusvalenze (26%): {fmt(tasseCG)}  ·  Portafoglio lordo {fmtShort(portMktEq)}
+            </Text>
+          )}
         </View>
 
         {/* Composizione Asset */}
@@ -261,6 +289,12 @@ const st = StyleSheet.create({
   kpiLabel:  { fontSize: 9, color: COLORS.subtext, fontWeight: '700', letterSpacing: 1, marginBottom: 4 },
   kpiVal:    { fontSize: 16, fontWeight: '800' },
   kpiSub:    { fontSize: 9, color: COLORS.subtext, marginTop: 3 },
+
+  equityBox:   { backgroundColor: '#0C1F18', borderRadius: 10, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: COLORS.success + '55' },
+  equityLabel: { fontSize: 9, color: COLORS.success, fontWeight: '800', letterSpacing: 2 },
+  equityVal:   { fontSize: 26, fontWeight: '900', color: COLORS.success, marginTop: 4 },
+  equitySub:   { fontSize: 11, color: COLORS.text, marginTop: 4 },
+  equityTax:   { fontSize: 10, color: COLORS.subtext, marginTop: 3 },
 
   section:       { backgroundColor: COLORS.surface, borderRadius: 10, padding: 14, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border },
   sectionHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 12 },

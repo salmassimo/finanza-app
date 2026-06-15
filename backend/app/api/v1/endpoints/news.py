@@ -228,7 +228,7 @@ Se il sommario è vuoto, lascia "sommario" vuoto.
 NOTIZIE:
 {payload}"""
 
-    text = await _call_claude(system=system, messages=[{"role": "user", "content": prompt}], max_tokens=3000)
+    text = await _call_claude(system=system, messages=[{"role": "user", "content": prompt}], max_tokens=4096)
 
     if "```" in text:
         parts = text.split("```")
