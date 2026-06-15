@@ -127,6 +127,9 @@ export const getMutui = () =>
 export const getPianoAmmortamento = (id: string) =>
   api.get(`/mutui/${id}/piano`).then(r => r.data);
 
+export const completaPianoMutuo = (id: string) =>
+  api.post(`/mutui/${id}/completa-piano`).then(r => r.data);
+
 // ── PATRIMONIO ────────────────────────────────────────
 export const getPatrimonioCorrente = () =>
   api.get('/patrimonio/corrente').then(r => r.data);

@@ -4,10 +4,10 @@ import {
   TextInput, ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { COLORS, fmt, fmtShort } from '../utils/format';
 import api from '../services/api';
-import { getAnalisiAnnuale } from '../services/api';
+import { getAnalisiAnnuale, completaPianoMutuo } from '../services/api';
 
 const getMutui = () => api.get('/mutui/').then(r => r.data);
 
@@ -410,6 +410,22 @@ function SimulatoreTab({ mutuo }: { mutuo: any }) {
 
 // ── Dettaglio mutuo ────────────────────────────────────
 function DettaglioTab({ mutuo }: { mutuo: any }) {
+  const qc = useQueryClient();
+  const [completaMsg, setCompletaMsg] = useState<string | null>(null);
+  const completa = useMutation({
+    mutationFn: () => completaPianoMutuo(String(mutuo.id)),
+    onSuccess: (d: any) => {
+      setCompletaMsg(
+        d.ricostruite > 0
+          ? `✓ ${d.ricostruite} rate ricostruite · residuo ${fmt(n(d.capitale_residuo_live))}`
+          : '✓ Piano già completo, nessuna rata mancante'
+      );
+      qc.invalidateQueries({ queryKey: ['mutui'] });
+      qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
+    },
+    onError: () => setCompletaMsg('✗ Errore durante il completamento del piano'),
+  });
+
   const erogato  = n(mutuo.capitale_erogato);
   const residuo  = n(mutuo.capitale_residuo_live);
   const rimborsato = erogato - residuo;
@@ -486,6 +502,26 @@ function DettaglioTab({ mutuo }: { mutuo: any }) {
           <Text style={[st.contractVal, { color: COLORS.primary }]}>{prossima}</Text>
         </View>
       </View>
+
+      {/* Completa piano: ricostruisce rate mancanti (salti pagina PDF) */}
+      <TouchableOpacity
+        style={st.completaBtn}
+        onPress={() => { setCompletaMsg(null); completa.mutate(); }}
+        disabled={completa.isPending}
+      >
+        {completa.isPending
+          ? <ActivityIndicator size="small" color={COLORS.primary} />
+          : <Ionicons name="construct-outline" size={14} color={COLORS.primary} />}
+        <Text style={st.completaBtnTxt}>Completa piano ammortamento</Text>
+      </TouchableOpacity>
+      {completaMsg && (
+        <Text style={[st.completaMsg, { color: completaMsg.startsWith('✓') ? COLORS.success : COLORS.danger }]}>
+          {completaMsg}
+        </Text>
+      )}
+      <Text style={st.completaHint}>
+        Ricostruisce eventuali rate mancanti nel piano (perse sui cambi pagina del PDF) e ricalcola il debito residuo.
+      </Text>
     </View>
   );
 }
@@ -645,6 +681,11 @@ const st = StyleSheet.create({
   contractRow: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: COLORS.border + '33' },
   contractLabel:{ fontSize: 11, color: COLORS.subtext },
   contractVal:  { fontSize: 11, color: COLORS.text, fontWeight: '700' },
+
+  completaBtn:    { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14, borderWidth: 1, borderColor: COLORS.primary + '66', borderRadius: 8, paddingVertical: 11 },
+  completaBtnTxt: { color: COLORS.primary, fontSize: 12, fontWeight: '700' },
+  completaMsg:    { fontSize: 11, fontWeight: '700', marginTop: 8, textAlign: 'center' },
+  completaHint:   { fontSize: 9, color: COLORS.subtext, marginTop: 6, textAlign: 'center', lineHeight: 13 },
 
   // Tabella annuale
   totRow:    { flexDirection: 'row', gap: 8, marginBottom: 12 },

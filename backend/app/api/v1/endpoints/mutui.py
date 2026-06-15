@@ -173,6 +173,77 @@ async def get_analisi_annuale(
     return result
 
 
+@router.post("/{mutuo_id}/completa-piano")
+async def completa_piano(
+    mutuo_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Ricostruisce le rate mancanti del piano ammortamento (es. perse sui cambi
+    pagina del PDF) dalla formula di ammortamento francese, senza ri-importare.
+    """
+    from calendar import monthrange
+
+    m = await db.get(Mutuo, mutuo_id)
+    if not m or m.utente_id != current_user.id:
+        raise HTTPException(404, "Mutuo non trovato")
+
+    res = await db.execute(
+        select(PianoAmmortamento)
+        .where(PianoAmmortamento.mutuo_id == m.id)
+        .order_by(PianoAmmortamento.numero_rata)
+    )
+    rate = res.scalars().all()
+    if not rate:
+        raise HTTPException(400, "Nessun piano presente: importa prima il mutuo.")
+
+    parsed = {r.numero_rata: r for r in rate}
+    n_max = max(m.rate_totali or 0, max(parsed.keys()))
+    first_date = min(r.data_scadenza for r in rate)
+    i_mensile = (m.tasso_valore / Decimal("100") / Decimal("12")) if m.tasso_valore else Decimal("0")
+    rata_mensile = m.rata_mensile
+    today = date.today()
+
+    def _add_months(d: date, k: int) -> date:
+        m0 = d.month - 1 + k
+        y = d.year + m0 // 12
+        mth = m0 % 12 + 1
+        return date(y, mth, min(d.day, monthrange(y, mth)[1]))
+
+    cum = Decimal("0")
+    ricostruite = 0
+    for n in range(1, n_max + 1):
+        if n in parsed:
+            cum += parsed[n].quota_capitale
+            continue
+        residuo_before = m.capitale_erogato - cum
+        q_int = (residuo_before * i_mensile).quantize(Decimal("0.01"))
+        q_cap = (rata_mensile - q_int).quantize(Decimal("0.01"))
+        scad = _add_months(first_date, n - 1)
+        db.add(PianoAmmortamento(
+            mutuo_id=m.id,
+            numero_rata=n,
+            data_scadenza=scad,
+            quota_capitale=q_cap,
+            quota_interessi=q_int,
+            rata_totale=rata_mensile,
+            pagata=scad <= today,
+        ))
+        cum += q_cap
+        ricostruite += 1
+
+    await db.flush()
+    out = await _build_mutuo_out(db, m)  # sincronizza capitale_residuo + rate_pagate
+    await db.commit()
+    return {
+        "ricostruite": ricostruite,
+        "rate_totali_piano": n_max,
+        "capitale_residuo_live": str(out.capitale_residuo_live),
+        "rate_pagate_live": out.rate_pagate_live,
+    }
+
+
 async def _build_mutuo_out(db: AsyncSession, m: Mutuo) -> MutuoOut:
     today = date.today()
 
