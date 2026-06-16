@@ -10,7 +10,7 @@ import {
   useUltimoAggiornamento, useBackfillPrezzi, useStoricoPosizione,
 } from '../hooks/useData';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
-import api, { setPrezzoManuale, setTicker } from '../services/api';
+import api, { setTicker } from '../services/api';
 import { COLORS, fmt, fmtShort } from '../utils/format';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 
@@ -237,20 +237,6 @@ function PosizioneRow({ pos }: { pos: any }) {
   const plPct = n(pos.var_pct);
 
   const qc = useQueryClient();
-  const [prezzoManuale, setPrezzoManualeInput] = useState('');
-  const [manualeMsg, setManualeMsg] = useState<string | null>(null);
-  const salvaPrezzo = useMutation({
-    mutationFn: () => setPrezzoManuale(String(pos.id), parseFloat(prezzoManuale.replace(',', '.'))),
-    onSuccess: () => {
-      setManualeMsg('✓ Prezzo aggiornato');
-      setPrezzoManualeInput('');
-      qc.invalidateQueries({ queryKey: ['portafoglio'] });
-      qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
-      qc.invalidateQueries({ queryKey: ['storico-portafoglio'] });
-    },
-    onError: () => setManualeMsg('✗ Errore salvataggio'),
-  });
-
   const [tickerInput, setTickerInput] = useState('');
   const [tickerMsg, setTickerMsg] = useState<string | null>(null);
   const salvaTicker = useMutation({
@@ -338,29 +324,6 @@ function PosizioneRow({ pos }: { pos: any }) {
               </TouchableOpacity>
             </View>
             {tickerMsg && <Text style={[s.manualeMsg, { color: tickerMsg.startsWith('✓') ? COLORS.success : COLORS.danger }]}>{tickerMsg}</Text>}
-          </View>
-
-          {/* Prezzo manuale (titoli non quotati, es. SpaceX) */}
-          <View style={s.manualeBox}>
-            <Text style={s.manualeLabel}>PREZZO MANUALE (titoli non quotati)</Text>
-            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
-              <TextInput
-                style={s.manualeInput}
-                value={prezzoManuale}
-                onChangeText={setPrezzoManualeInput}
-                placeholder={pos.prezzo_mercato ? `attuale ${fmt(pos.prezzo_mercato)}` : 'es. 185,00'}
-                placeholderTextColor={COLORS.subtext}
-                keyboardType="decimal-pad"
-              />
-              <TouchableOpacity
-                style={[s.manualeBtn, (!prezzoManuale || salvaPrezzo.isPending) && { opacity: 0.5 }]}
-                onPress={() => { setManualeMsg(null); if (prezzoManuale) salvaPrezzo.mutate(); }}
-                disabled={!prezzoManuale || salvaPrezzo.isPending}
-              >
-                {salvaPrezzo.isPending ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Text style={s.manualeBtnTxt}>Salva</Text>}
-              </TouchableOpacity>
-            </View>
-            {manualeMsg && <Text style={[s.manualeMsg, { color: manualeMsg.startsWith('✓') ? COLORS.success : COLORS.danger }]}>{manualeMsg}</Text>}
           </View>
 
           <ChartErrorBoundary posId={String(pos.id)}>
