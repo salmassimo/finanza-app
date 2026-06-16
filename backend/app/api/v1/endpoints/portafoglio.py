@@ -113,6 +113,60 @@ async def get_storico_posizione(
         var_pct=s.var_pct
     ) for s in snapshots]
 
+class TickerIn(BaseModel):
+    simbolo: str
+
+
+@router.patch("/{posizione_id}/ticker")
+async def set_ticker(
+    posizione_id: UUID,
+    body: TickerIn,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Aggancia la posizione a un ticker Yahoo (es. SPCX per SpaceX). Verifica che
+    il ticker restituisca un prezzo, aggiorna il simbolo dello strumento e crea
+    subito uno snapshot 'yahoo' (così i futuri aggiornamenti sono automatici).
+    """
+    from app.services.prezzi import fetch_prezzo_yahoo
+
+    pos = await db.get(Posizione, posizione_id)
+    if not pos or pos.utente_id != current_user.id:
+        raise HTTPException(404, "Posizione non trovata")
+
+    nuovo = body.simbolo.strip().upper()
+    if not nuovo:
+        raise HTTPException(400, "Ticker mancante")
+
+    prezzo = await fetch_prezzo_yahoo(nuovo)
+    if prezzo is None:
+        raise HTTPException(400, f"Ticker '{nuovo}' non trovato su Yahoo Finance")
+
+    strumento = await db.get(Strumento, pos.strumento_id)
+    strumento.simbolo = nuovo
+
+    now = datetime.utcnow()
+    prezzo_dec = Decimal(str(prezzo))
+    valore_mercato = prezzo_dec * pos.quantita
+    var_eur = valore_mercato - pos.valore_carico
+    var_pct = (var_eur / pos.valore_carico * 100) if pos.valore_carico else Decimal("0")
+
+    db.add(PrezzoSnapshot(
+        strumento_id=strumento.id, prezzo=prezzo_dec, valuta="EUR",
+        fonte="yahoo", rilevato_at=now,
+    ))
+    db.add(PosizioneSnapshot(
+        posizione_id=pos.id, quantita=pos.quantita, prezzo_mercato=prezzo_dec,
+        valore_mercato=valore_mercato, var_eur=var_eur, var_pct=var_pct, rilevato_at=now,
+    ))
+    await db.commit()
+    return {
+        "ok": True, "simbolo": nuovo, "prezzo": str(prezzo_dec),
+        "valore_mercato": str(valore_mercato),
+    }
+
+
 class PrezzoManualeIn(BaseModel):
     prezzo: Decimal
 

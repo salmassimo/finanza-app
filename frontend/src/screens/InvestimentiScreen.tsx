@@ -10,7 +10,7 @@ import {
   useUltimoAggiornamento, useBackfillPrezzi, useStoricoPosizione,
 } from '../hooks/useData';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
-import api, { setPrezzoManuale } from '../services/api';
+import api, { setPrezzoManuale, setTicker } from '../services/api';
 import { COLORS, fmt, fmtShort } from '../utils/format';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 
@@ -251,6 +251,20 @@ function PosizioneRow({ pos }: { pos: any }) {
     onError: () => setManualeMsg('✗ Errore salvataggio'),
   });
 
+  const [tickerInput, setTickerInput] = useState('');
+  const [tickerMsg, setTickerMsg] = useState<string | null>(null);
+  const salvaTicker = useMutation({
+    mutationFn: () => setTicker(String(pos.id), tickerInput.trim()),
+    onSuccess: (d: any) => {
+      setTickerMsg(`✓ Agganciato a ${d.simbolo} · prezzo ${fmt(n(d.prezzo))}`);
+      setTickerInput('');
+      qc.invalidateQueries({ queryKey: ['portafoglio'] });
+      qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
+      qc.invalidateQueries({ queryKey: ['storico-portafoglio'] });
+    },
+    onError: (e: any) => setTickerMsg(`✗ ${e?.response?.data?.detail || 'Ticker non valido'}`),
+  });
+
   const tipoBadgeColor = pos.tipo === 'crypto'          ? COLORS.orange
     : pos.tipo === 'azione'         ? COLORS.purple
     : pos.tipo === 'conto_deposito' ? COLORS.success
@@ -303,6 +317,29 @@ function PosizioneRow({ pos }: { pos: any }) {
               <Text style={[s.miniStatVal, { color: colorPL(pl) }]}>{pl >= 0 ? '+' : ''}{fmtShort(pl)}</Text>
             </View>
           </View>
+          {/* Aggancia a ticker Yahoo (es. SPCX per SpaceX) */}
+          <View style={s.manualeBox}>
+            <Text style={s.manualeLabel}>TICKER YAHOO · attuale: {pos.simbolo}</Text>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <TextInput
+                style={s.manualeInput}
+                value={tickerInput}
+                onChangeText={setTickerInput}
+                placeholder="es. SPCX"
+                placeholderTextColor={COLORS.subtext}
+                autoCapitalize="characters"
+              />
+              <TouchableOpacity
+                style={[s.manualeBtn, (!tickerInput || salvaTicker.isPending) && { opacity: 0.5 }]}
+                onPress={() => { setTickerMsg(null); if (tickerInput) salvaTicker.mutate(); }}
+                disabled={!tickerInput || salvaTicker.isPending}
+              >
+                {salvaTicker.isPending ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Text style={s.manualeBtnTxt}>Aggancia</Text>}
+              </TouchableOpacity>
+            </View>
+            {tickerMsg && <Text style={[s.manualeMsg, { color: tickerMsg.startsWith('✓') ? COLORS.success : COLORS.danger }]}>{tickerMsg}</Text>}
+          </View>
+
           {/* Prezzo manuale (titoli non quotati, es. SpaceX) */}
           <View style={s.manualeBox}>
             <Text style={s.manualeLabel}>PREZZO MANUALE (titoli non quotati)</Text>
