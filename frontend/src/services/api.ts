@@ -107,6 +107,9 @@ export const getStoricoPostazione = (id: string) =>
 export const aggiornaPrezzi = () =>
   api.post('/portafoglio/aggiorna-prezzi').then(r => r.data);
 
+export const setPrezzoManuale = (id: string, prezzo: number) =>
+  api.post(`/portafoglio/${id}/prezzo-manuale`, { prezzo }).then(r => r.data);
+
 export const backfillPrezzi = (range: string = '1y') =>
   api.post(`/portafoglio/backfill-prezzi?range=${range}`).then(r => r.data);
 

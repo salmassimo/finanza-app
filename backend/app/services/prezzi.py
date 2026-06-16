@@ -190,15 +190,30 @@ async def aggiorna_tutti_i_prezzi(db: AsyncSession, utente_id: str) -> dict:
             aggiornati.append({"simbolo": simbolo, "prezzo": float(pos.quantita)})
             continue
 
-        elif pos.strumento.tipo == TipoStrumento.crypto:
+        manuale = False
+        if pos.strumento.tipo == TipoStrumento.crypto:
             prezzo = crypto_prezzi.get(simbolo)
         else:
-            prezzo = await fetch_prezzo_yahoo(simbolo)
-            # Fallback su ticker alternativo se il primo fallisce
-            if prezzo is None and simbolo in TICKER_FALLBACK:
-                alt = TICKER_FALLBACK[simbolo]
-                print(f"[Yahoo] Fallback {simbolo} → {alt}")
-                prezzo = await fetch_prezzo_yahoo(alt)
+            # Se l'ultimo prezzo è stato impostato manualmente (es. titoli non
+            # quotati come SpaceX), non sovrascrivere con Yahoo: riporta avanti
+            # il valore manuale così resta visibile e non genera errori.
+            last_pr_res = await db.execute(
+                select(PrezzoSnapshot)
+                .where(PrezzoSnapshot.strumento_id == pos.strumento_id)
+                .order_by(PrezzoSnapshot.rilevato_at.desc())
+                .limit(1)
+            )
+            last_pr = last_pr_res.scalar_one_or_none()
+            if last_pr is not None and last_pr.fonte == "manuale":
+                prezzo = float(last_pr.prezzo)
+                manuale = True
+            else:
+                prezzo = await fetch_prezzo_yahoo(simbolo)
+                # Fallback su ticker alternativo se il primo fallisce
+                if prezzo is None and simbolo in TICKER_FALLBACK:
+                    alt = TICKER_FALLBACK[simbolo]
+                    print(f"[Yahoo] Fallback {simbolo} → {alt}")
+                    prezzo = await fetch_prezzo_yahoo(alt)
 
         if prezzo is None:
             errori.append(simbolo)
@@ -210,7 +225,7 @@ async def aggiorna_tutti_i_prezzi(db: AsyncSession, utente_id: str) -> dict:
             strumento_id=pos.strumento_id,
             prezzo=prezzo_dec,
             valuta="EUR",
-            fonte="coingecko" if pos.strumento.tipo == TipoStrumento.crypto else "yahoo",
+            fonte="manuale" if manuale else ("coingecko" if pos.strumento.tipo == TipoStrumento.crypto else "yahoo"),
             rilevato_at=now
         ))
 

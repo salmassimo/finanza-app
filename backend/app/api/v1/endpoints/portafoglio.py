@@ -113,6 +113,51 @@ async def get_storico_posizione(
         var_pct=s.var_pct
     ) for s in snapshots]
 
+class PrezzoManualeIn(BaseModel):
+    prezzo: Decimal
+
+
+@router.post("/{posizione_id}/prezzo-manuale")
+async def set_prezzo_manuale(
+    posizione_id: UUID,
+    body: PrezzoManualeIn,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Imposta manualmente il prezzo di una posizione (es. titoli non quotati come
+    SpaceX). Crea uno snapshot 'manuale' che 'aggiorna prezzi' non sovrascrive.
+    """
+    pos = await db.get(Posizione, posizione_id)
+    if not pos or pos.utente_id != current_user.id:
+        raise HTTPException(404, "Posizione non trovata")
+
+    prezzo = body.prezzo
+    if prezzo <= 0:
+        raise HTTPException(400, "Prezzo non valido")
+
+    now = datetime.utcnow()
+    valore_mercato = prezzo * pos.quantita
+    var_eur = valore_mercato - pos.valore_carico
+    var_pct = (var_eur / pos.valore_carico * 100) if pos.valore_carico else Decimal("0")
+
+    db.add(PrezzoSnapshot(
+        strumento_id=pos.strumento_id, prezzo=prezzo, valuta="EUR",
+        fonte="manuale", rilevato_at=now,
+    ))
+    db.add(PosizioneSnapshot(
+        posizione_id=pos.id, quantita=pos.quantita, prezzo_mercato=prezzo,
+        valore_mercato=valore_mercato, var_eur=var_eur, var_pct=var_pct, rilevato_at=now,
+    ))
+    await db.commit()
+    return {
+        "ok": True,
+        "prezzo": str(prezzo),
+        "valore_mercato": str(valore_mercato),
+        "var_eur": str(var_eur),
+    }
+
+
 @router.post("/aggiorna-prezzi")
 async def aggiorna_prezzi(
     db: AsyncSession = Depends(get_db),

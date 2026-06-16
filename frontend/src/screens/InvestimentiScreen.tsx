@@ -10,7 +10,7 @@ import {
   useUltimoAggiornamento, useBackfillPrezzi, useStoricoPosizione,
 } from '../hooks/useData';
 import { useQueryClient, useQuery, useMutation } from '@tanstack/react-query';
-import api from '../services/api';
+import api, { setPrezzoManuale } from '../services/api';
 import { COLORS, fmt, fmtShort } from '../utils/format';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 
@@ -236,6 +236,21 @@ function PosizioneRow({ pos }: { pos: any }) {
   const pl    = n(pos.var_eur);
   const plPct = n(pos.var_pct);
 
+  const qc = useQueryClient();
+  const [prezzoManuale, setPrezzoManualeInput] = useState('');
+  const [manualeMsg, setManualeMsg] = useState<string | null>(null);
+  const salvaPrezzo = useMutation({
+    mutationFn: () => setPrezzoManuale(String(pos.id), parseFloat(prezzoManuale.replace(',', '.'))),
+    onSuccess: () => {
+      setManualeMsg('✓ Prezzo aggiornato');
+      setPrezzoManualeInput('');
+      qc.invalidateQueries({ queryKey: ['portafoglio'] });
+      qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
+      qc.invalidateQueries({ queryKey: ['storico-portafoglio'] });
+    },
+    onError: () => setManualeMsg('✗ Errore salvataggio'),
+  });
+
   const tipoBadgeColor = pos.tipo === 'crypto'          ? COLORS.orange
     : pos.tipo === 'azione'         ? COLORS.purple
     : pos.tipo === 'conto_deposito' ? COLORS.success
@@ -288,6 +303,29 @@ function PosizioneRow({ pos }: { pos: any }) {
               <Text style={[s.miniStatVal, { color: colorPL(pl) }]}>{pl >= 0 ? '+' : ''}{fmtShort(pl)}</Text>
             </View>
           </View>
+          {/* Prezzo manuale (titoli non quotati, es. SpaceX) */}
+          <View style={s.manualeBox}>
+            <Text style={s.manualeLabel}>PREZZO MANUALE (titoli non quotati)</Text>
+            <View style={{ flexDirection: 'row', gap: 8, alignItems: 'center' }}>
+              <TextInput
+                style={s.manualeInput}
+                value={prezzoManuale}
+                onChangeText={setPrezzoManualeInput}
+                placeholder={pos.prezzo_mercato ? `attuale ${fmt(pos.prezzo_mercato)}` : 'es. 185,00'}
+                placeholderTextColor={COLORS.subtext}
+                keyboardType="decimal-pad"
+              />
+              <TouchableOpacity
+                style={[s.manualeBtn, (!prezzoManuale || salvaPrezzo.isPending) && { opacity: 0.5 }]}
+                onPress={() => { setManualeMsg(null); if (prezzoManuale) salvaPrezzo.mutate(); }}
+                disabled={!prezzoManuale || salvaPrezzo.isPending}
+              >
+                {salvaPrezzo.isPending ? <ActivityIndicator size="small" color={COLORS.primary} /> : <Text style={s.manualeBtnTxt}>Salva</Text>}
+              </TouchableOpacity>
+            </View>
+            {manualeMsg && <Text style={[s.manualeMsg, { color: manualeMsg.startsWith('✓') ? COLORS.success : COLORS.danger }]}>{manualeMsg}</Text>}
+          </View>
+
           <ChartErrorBoundary posId={String(pos.id)}>
             <PosizioneChart posId={String(pos.id)} />
           </ChartErrorBoundary>
@@ -832,6 +870,13 @@ const s = StyleSheet.create({
   miniStat:     { flex: 1, backgroundColor: COLORS.surface, borderRadius: 6, padding: 8, borderWidth: 1, borderColor: COLORS.border },
   miniStatLabel:{ fontSize: 8, color: COLORS.subtext, fontWeight: '700', letterSpacing: 0.5, marginBottom: 3 },
   miniStatVal:  { fontSize: 12, fontWeight: '800', color: COLORS.text },
+
+  manualeBox:    { backgroundColor: COLORS.bg, borderRadius: 8, padding: 10, marginBottom: 10, borderWidth: 1, borderColor: COLORS.border + '88' },
+  manualeLabel:  { fontSize: 8, color: COLORS.subtext, fontWeight: '700', letterSpacing: 0.5, marginBottom: 6 },
+  manualeInput:  { flex: 1, backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 7, color: COLORS.text, fontSize: 13 },
+  manualeBtn:    { borderWidth: 1, borderColor: COLORS.primary + '66', borderRadius: 6, paddingHorizontal: 14, paddingVertical: 8 },
+  manualeBtnTxt: { color: COLORS.primary, fontSize: 12, fontWeight: '800' },
+  manualeMsg:    { fontSize: 10, fontWeight: '700', marginTop: 6 },
 
   totaleRow:   { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, marginTop: 4, borderTopWidth: 1, borderTopColor: COLORS.border },
   totaleLabel: { color: COLORS.subtext, fontWeight: '700', fontSize: 11, letterSpacing: 2 },
