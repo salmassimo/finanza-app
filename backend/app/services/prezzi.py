@@ -42,7 +42,7 @@ async def _fx_to_eur(client: httpx.AsyncClient, valuta: str) -> float | None:
         return None
 
 
-async def fetch_prezzo_yahoo(simbolo: str) -> float | None:
+async def fetch_prezzo_yahoo(simbolo: str, _allow_strip: bool = True) -> float | None:
     """Recupera l'ultimo prezzo da Yahoo Finance (convertito in EUR se quotato in altra valuta)."""
     url = f"{YAHOO_BASE}/{simbolo}"
     params = {"interval": "1d", "range": "5d"}
@@ -52,6 +52,12 @@ async def fetch_prezzo_yahoo(simbolo: str) -> float | None:
             data = r.json()
             result = data.get("chart", {}).get("result", [])
             if not result:
+                # Suffissi stile Reuters/Refinitiv non validi su Yahoo (es. SPCX.O → SPCX)
+                if _allow_strip and "." in simbolo:
+                    base = simbolo.rsplit(".", 1)[0]
+                    if base and base != simbolo and simbolo.upper().endswith(".O"):
+                        print(f"[Yahoo] {simbolo} non trovato → riprovo {base}")
+                        return await fetch_prezzo_yahoo(base, _allow_strip=False)
                 print(f"[Yahoo] Nessun risultato per {simbolo}")
                 return None
             meta = result[0].get("meta", {})
