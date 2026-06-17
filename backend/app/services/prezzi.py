@@ -29,8 +29,21 @@ _HEADERS = {
 
 # ─── Prezzi real-time ──────────────────────────────────────────────────────────
 
+async def _fx_to_eur(client: httpx.AsyncClient, valuta: str) -> float | None:
+    """Tasso di cambio valuta→EUR da Yahoo (es. USDEUR=X)."""
+    try:
+        r = await client.get(f"{YAHOO_BASE}/{valuta}EUR=X", params={"interval": "1d", "range": "5d"})
+        res = r.json().get("chart", {}).get("result", [])
+        if not res:
+            return None
+        closes = [c for c in res[0].get("indicators", {}).get("quote", [{}])[0].get("close", []) if c is not None]
+        return float(closes[-1]) if closes else None
+    except Exception:
+        return None
+
+
 async def fetch_prezzo_yahoo(simbolo: str) -> float | None:
-    """Recupera l'ultimo prezzo da Yahoo Finance via chiamata HTTP diretta."""
+    """Recupera l'ultimo prezzo da Yahoo Finance (convertito in EUR se quotato in altra valuta)."""
     url = f"{YAHOO_BASE}/{simbolo}"
     params = {"interval": "1d", "range": "5d"}
     async with httpx.AsyncClient(timeout=15, headers=_HEADERS) as client:
@@ -41,13 +54,22 @@ async def fetch_prezzo_yahoo(simbolo: str) -> float | None:
             if not result:
                 print(f"[Yahoo] Nessun risultato per {simbolo}")
                 return None
+            meta = result[0].get("meta", {})
             closes = result[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
             closes_valid = [c for c in closes if c is not None]
             if not closes_valid:
                 print(f"[Yahoo] Nessun close valido per {simbolo}")
                 return None
             price = float(closes_valid[-1])
-            print(f"[Yahoo] {simbolo} = {price:.4f}")
+            valuta = (meta.get("currency") or "EUR").upper()
+            if valuta and valuta != "EUR":
+                rate = await _fx_to_eur(client, valuta)
+                if rate:
+                    price_eur = price * rate
+                    print(f"[Yahoo] {simbolo} = {price:.4f} {valuta} → {price_eur:.4f} EUR (x{rate:.4f})")
+                    return price_eur
+                print(f"[Yahoo] {simbolo}: cambio {valuta}→EUR non disponibile, uso valore nativo")
+            print(f"[Yahoo] {simbolo} = {price:.4f} {valuta}")
             return price
         except Exception as e:
             print(f"[Yahoo] Errore {simbolo}: {e}")
