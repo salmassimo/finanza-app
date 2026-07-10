@@ -607,7 +607,7 @@ async def importa_unicredit_conto(
             parts = row_val.split("-")[0].strip().split()
             iban_parts = [p for p in parts if p not in ("Rapporto", "EUR")]
             iban = "".join(iban_parts[:7]) if len(iban_parts) >= 7 else None
-        if saldo_contabile is None and "Saldo contabile" in row_val:
+        if saldo_contabile is None and "saldo contabile" in row_val.lower():
             m = re.search(r"([\d\.]+,\d+)", row_val)
             if m:
                 saldo_contabile = Decimal(m.group(1).replace(".", "").replace(",", "."))
@@ -629,10 +629,10 @@ async def importa_unicredit_conto(
             rilevato_at=datetime.utcnow(),
         ))
 
-    # Trova riga header (Data Registrazione)
+    # Trova riga header (case-insensitive: UniCredit usa "Data registrazione")
     header_row = None
     for i in range(ws.nrows):
-        if ws.cell_value(i, 0) == "Data Registrazione":
+        if str(ws.cell_value(i, 0)).strip().lower().startswith("data registr"):
             header_row = i
             break
     if header_row is None:
