@@ -717,25 +717,38 @@ async def importa_unicredit_carta(
         "Carta UniCredit Flexia Gold", "carta_credito", "UniCredit"
     )
 
-    # Trova header
+    # Trova header e mappa le colonne per nome (robusto a vecchio/nuovo formato UniCredit)
     header_row = None
-    for i in range(ws.nrows):
-        if str(ws.cell_value(i, 0)).strip() == "Data Registrazione":
+    cols: dict[str, int] = {}
+    for i in range(min(ws.nrows, 15)):
+        row = [str(ws.cell_value(i, c)).strip().lower() for c in range(ws.ncols)]
+        if any(h.startswith("data") for h in row) and any("importo" in h for h in row) and any("descriz" in h for h in row):
+            for c, h in enumerate(row):
+                if "valuta" in h:
+                    cols["valuta"] = c
+                elif h.startswith("data"):
+                    cols["data"] = c
+                elif h.startswith("ora"):
+                    cols["ora"] = c
+                elif "descriz" in h:
+                    cols["descr"] = c
+                elif "importo" in h:
+                    cols["importo"] = c
             header_row = i
             break
-    if header_row is None:
-        raise HTTPException(400, "Header non trovato")
+    if header_row is None or not {"data", "descr", "importo"} <= cols.keys():
+        raise HTTPException(400, "Header non trovato (colonne Data/Descrizione/Importo)")
 
     importati, saltati, errori = 0, 0, []
     for i in range(header_row + 1, ws.nrows):
         try:
-            data_reg_raw = str(ws.cell_value(i, 0)).strip()
-            ora          = str(ws.cell_value(i, 1)).strip()
-            data_val_raw = str(ws.cell_value(i, 2)).strip()
-            descrizione  = str(ws.cell_value(i, 3)).strip()
-            importo_raw  = ws.cell_value(i, 4)
+            data_reg_raw = str(ws.cell_value(i, cols["data"])).strip()
+            ora          = str(ws.cell_value(i, cols["ora"])).strip() if "ora" in cols else ""
+            data_val_raw = str(ws.cell_value(i, cols["valuta"])).strip() if "valuta" in cols else data_reg_raw
+            descrizione  = str(ws.cell_value(i, cols["descr"])).strip()
+            importo_raw  = ws.cell_value(i, cols["importo"])
 
-            if not data_reg_raw or not importo_raw:
+            if not data_reg_raw or importo_raw in ("", None):
                 continue
 
             data_op  = _parse_date_it(data_reg_raw)
