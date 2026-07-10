@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from app.core.config import settings
-from app.api.v1.endpoints import auth, utenti, conti, mutui, immobili, portafoglio, orologi, movimenti, patrimonio, prezzi, importa, advisor, fondi_pensione, proiezione, alert, obiettivi, polizze, pac, news
+from app.api.v1.endpoints import auth, utenti, conti, mutui, immobili, portafoglio, orologi, movimenti, patrimonio, prezzi, importa, advisor, fondi_pensione, proiezione, alert, obiettivi, polizze, pac, news, reddito
 
 scheduler = AsyncIOScheduler()
 
@@ -92,6 +92,7 @@ app.include_router(obiettivi.router,      prefix="/api/v1/obiettivi",     tags=[
 app.include_router(polizze.router,        prefix="/api/v1/polizze",        tags=["Polizze"])
 app.include_router(pac.router,            prefix="/api/v1/pac",            tags=["PAC"])
 app.include_router(news.router,           prefix="/api/v1/news",           tags=["News"])
+app.include_router(reddito.router,        prefix="/api/v1/reddito",        tags=["Reddito"])
 
 @app.get("/health")
 async def health():

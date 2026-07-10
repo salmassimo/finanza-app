@@ -1748,3 +1748,93 @@ async def importa_fineco_conto(
         "errori": errori[:10],
         "saldo_finale": float(saldo_finale) if saldo_finale is not None else None,
     }
+
+
+# ── IMPORT BUSTA PAGA (PDF → analisi AI) ─────────────────────────────────────
+
+@router.post("/busta-paga")
+async def importa_busta_paga(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """
+    Importa una busta paga PDF: estrae il testo e la fa analizzare a Claude per
+    ricavare periodo, azienda, tipo mensilità (ordinaria/13/14/premio/una tantum),
+    competenze/trattenute e netto. Dedup per anno+mese+tipo+netto.
+    """
+    from fastapi import HTTPException
+    import io as _io, json
+    from app.models.models import BustaPaga
+    from app.api.v1.endpoints.advisor import _call_claude
+
+    content = await file.read()
+    try:
+        import pdfplumber
+        with pdfplumber.open(_io.BytesIO(content)) as pdf:
+            testo = "\n".join((p.extract_text() or "") for p in pdf.pages)
+    except Exception as e:
+        raise HTTPException(400, f"Errore lettura PDF: {e}")
+    if not testo.strip():
+        raise HTTPException(400, "PDF senza testo leggibile (forse è una scansione immagine)")
+
+    prompt = (
+        "Sei un parser di buste paga italiane (modello Zucchetti e simili). "
+        "Estrai i dati e rispondi SOLO con JSON valido:\n"
+        '{"anno":int,"mese":int,"azienda":str,'
+        '"tipo_mensilita":"ordinaria|tredicesima|quattordicesima|premio|una_tantum|altro",'
+        '"totale_competenze":float,"totale_trattenute":float,"netto":float,'
+        '"voci":[{"descrizione":str,"importo":float}]}\n'
+        "Regole: netto = riga NETTO in busta (spesso con asterischi, es. ***1.234,00 -> 1234.00). "
+        "mese/anno dal PERIODO DI RETRIBUZIONE. Importi in formato italiano (virgola decimale) -> float. "
+        "tipo_mensilita: 'tredicesima' se gratifica natalizia/dicembre aggiuntiva, 'quattordicesima' se mensilità aggiuntiva estiva, "
+        "'premio' per premio di produzione/risultato, 'una_tantum' per erogazioni straordinarie, altrimenti 'ordinaria'. "
+        "voci: massimo 10 principali (stipendio base, superminimo, indennità, premi, TFR, ritenute principali). "
+        "Ignora i nomi di esempio del modello (es. BIANCHINI MICHELE / codici BNC...).\n\nBUSTA:\n"
+        + testo[:12000]
+    )
+
+    raw = await _call_claude(
+        system="Sei un parser di buste paga. Rispondi solo con JSON valido, nessun altro testo.",
+        messages=[{"role": "user", "content": prompt}],
+        max_tokens=1500,
+    )
+    if "```" in raw:
+        parts = raw.split("```")
+        raw = parts[1] if len(parts) > 1 else parts[0]
+        if raw.startswith("json"):
+            raw = raw[4:]
+    try:
+        d = json.loads(raw.strip())
+    except Exception:
+        raise HTTPException(502, "Analisi busta non interpretabile. Riprova.")
+
+    anno = int(d.get("anno") or 0)
+    mese = int(d.get("mese") or 0)
+    if not (anno and 1 <= mese <= 12):
+        raise HTTPException(400, "Periodo (mese/anno) non riconosciuto nella busta")
+
+    tipo = d.get("tipo_mensilita") or "ordinaria"
+    netto = Decimal(str(d.get("netto") or 0))
+    ext_id = _ext_id(["busta", anno, mese, tipo, netto])
+
+    exists = await db.execute(
+        select(BustaPaga).where(BustaPaga.external_id == ext_id, BustaPaga.utente_id == current_user.id)
+    )
+    if exists.scalar_one_or_none():
+        return {"stato": "gia_presente", "anno": anno, "mese": mese, "tipo": tipo, "netto": float(netto)}
+
+    bp = BustaPaga(
+        utente_id=current_user.id, anno=anno, mese=mese,
+        azienda=(d.get("azienda") or None), tipo_mensilita=tipo,
+        totale_competenze=Decimal(str(d.get("totale_competenze") or 0)),
+        totale_trattenute=Decimal(str(d.get("totale_trattenute") or 0)),
+        netto=netto, voci=d.get("voci") or [], fonte="pdf", external_id=ext_id,
+    )
+    db.add(bp)
+    await db.commit()
+    return {
+        "stato": "importata", "anno": anno, "mese": mese, "tipo": tipo,
+        "azienda": d.get("azienda"), "netto": float(netto),
+        "lordo": float(bp.totale_competenze),
+    }

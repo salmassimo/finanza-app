@@ -438,3 +438,24 @@ class PianoAccumuloStrumento(Base):
 
     piano: Mapped["PianoAccumulo"] = relationship(back_populates="strumenti")
 
+
+# ── BUSTE PAGA / REDDITO ───────────────────────────────
+class BustaPaga(Base):
+    __tablename__ = "buste_paga"
+
+    id:                 Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    utente_id:          Mapped[uuid.UUID] = mapped_column(ForeignKey("utenti.id", ondelete="CASCADE"), index=True)
+    anno:               Mapped[int]       = mapped_column(Integer, index=True)
+    mese:               Mapped[int]       = mapped_column(Integer)                 # 1-12
+    azienda:            Mapped[str|None]  = mapped_column(String(150))
+    # ordinaria | tredicesima | quattordicesima | premio | una_tantum | altro
+    tipo_mensilita:     Mapped[str]       = mapped_column(String(30), default="ordinaria")
+    totale_competenze:  Mapped[Decimal]   = mapped_column(Numeric(12, 2), default=0)  # lordo
+    totale_trattenute:  Mapped[Decimal]   = mapped_column(Numeric(12, 2), default=0)
+    netto:              Mapped[Decimal]   = mapped_column(Numeric(12, 2), default=0)  # netto in busta
+    voci:               Mapped[dict|None] = mapped_column(JSON)                     # [{descrizione, importo}]
+    fonte:              Mapped[str]       = mapped_column(String(50), default="pdf")
+    external_id:        Mapped[str|None]  = mapped_column(String(255), index=True)  # dedup
+    note:               Mapped[str|None]  = mapped_column(Text)
+    created_at:         Mapped[datetime]  = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
+

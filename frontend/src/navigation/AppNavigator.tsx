@@ -20,6 +20,7 @@ import FuturoScreen       from '../screens/FuturoScreen';
 import PolizzeScreen      from '../screens/PolizzeScreen';
 import NewsScreen         from '../screens/NewsScreen';
 import ContiScreen        from '../screens/ContiScreen';
+import RedditoScreen      from '../screens/RedditoScreen';
 import LoginScreen        from '../screens/LoginScreen';
 
 const Drawer = createDrawerNavigator();
@@ -49,6 +50,7 @@ const MENU: MenuGroup[] = [
     sezione: 'Conti & Spese', icon: 'wallet',
     items: [
       { name: 'Conti',     title: 'Conti',     icon: 'card',     component: ContiScreen },
+      { name: 'Reddito',   title: 'Reddito',   icon: 'cash',     component: RedditoScreen },
       { name: 'Movimenti', title: 'Movimenti', icon: 'wallet',   component: MovimentiScreen },
       { name: 'Mutui',     title: 'Mutui',     icon: 'business', component: MutuiScreen },
       { name: 'Polizze',   title: 'Polizze',   icon: 'shield',   component: PolizzeScreen },

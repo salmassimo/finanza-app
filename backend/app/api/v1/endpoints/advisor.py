@@ -22,7 +22,7 @@ from app.models.models import (
     Immobile, ImmobileSnapshot,
     Orologio, OrologioSnapshot,
     Mutuo, Movimento, TipoMovimento, CategoriaSpesa,
-    FondoPensione, FondoPensioneSnapshot,
+    FondoPensione, FondoPensioneSnapshot, BustaPaga,
 )
 
 router = APIRouter()
@@ -437,13 +437,20 @@ async def _build_fondi_pensione_context(db: AsyncSession, user_id) -> list[dict]
     return out
 
 
+async def _build_reddito_context(db: AsyncSession, user_id) -> dict:
+    """Sintesi reddito da lavoro (buste paga) — base per le analisi AI."""
+    from app.api.v1.endpoints.reddito import _sintesi_da_buste
+    res = await db.execute(select(BustaPaga).where(BustaPaga.utente_id == user_id))
+    return _sintesi_da_buste(res.scalars().all())
+
+
 # ─── Prompt builders ────────────────────────────────────────────────────────────
 
 def _fmt(v: float) -> str:
     return f"€{v:,.0f}".replace(",", ".")
 
 
-def _build_system_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None, polizze: dict | None = None) -> str:
+def _build_system_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None, polizze: dict | None = None, reddito: dict | None = None) -> str:
     """System prompt ricco con tutto il contesto finanziario."""
     lines = [
         "Sei Marco, un consulente finanziario indipendente di alto livello e di fiducia del cliente.",
@@ -463,6 +470,26 @@ def _build_system_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None
     ]
     for c in pat["conti"]:
         lines.append(f"  - {c['nome']} ({c['tipo']}, {c['banca']}): {_fmt(c['saldo'])}")
+
+    if reddito and reddito.get("n_buste"):
+        lines += [
+            "",
+            "### REDDITO DA LAVORO (da buste paga)",
+            f"Azienda: {reddito.get('azienda') or 'n.d.'} | Buste analizzate: {reddito['n_buste']}",
+            f"Netto mensile medio (ordinaria): {_fmt(reddito.get('netto_mensile_medio', 0))}",
+            f"**Reddito netto annuo stimato: {_fmt(reddito.get('reddito_netto_annuo_stimato', 0))}** "
+            f"(lordo/RAL ~{_fmt(reddito.get('reddito_lordo_annuo_stimato', 0))})",
+        ]
+        for a in reddito.get("anni", [])[:2]:
+            extra = []
+            if a["ha_tredicesima"]: extra.append("13ª")
+            if a["ha_quattordicesima"]: extra.append("14ª")
+            if a["premi_netto"]: extra.append(f"premi {_fmt(a['premi_netto'])}")
+            lines.append(
+                f"  - {a['anno']}: netto {_fmt(a['netto_totale'])} ({a['n_buste']} buste)"
+                + (f" · {', '.join(extra)}" if extra else "")
+            )
+        lines.append("  USA questo reddito come base per sostenibilità spese, risparmio potenziale e capacità di investimento.")
 
     lines += ["", "### PORTAFOGLIO INVESTIMENTI", f"Totale: {_fmt(pat['portafoglio_totale'])}"]
     for p in pat["portafoglio_items"]:
@@ -579,9 +606,9 @@ def _build_system_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None
     return "\n".join(lines)
 
 
-def _build_analysis_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None, polizze: dict | None = None) -> str:
+def _build_analysis_prompt(pat: dict, spese: dict, fondi: list[dict] | None = None, polizze: dict | None = None, reddito: dict | None = None) -> str:
     """Prompt per analisi strutturata JSON (endpoint /analisi)."""
-    system = _build_system_prompt(pat, spese, fondi, polizze)
+    system = _build_system_prompt(pat, spese, fondi, polizze, reddito)
     return system + """
 
 ## RICHIESTA
@@ -641,7 +668,8 @@ async def analisi_finanziaria(
     spese   = await _build_spese_context(db, current_user.id)
     fondi   = await _build_fondi_pensione_context(db, current_user.id)
     polizze = await _build_polizze_context(db, current_user.id)
-    prompt  = _build_analysis_prompt(pat, spese, fondi, polizze)
+    reddito = await _build_reddito_context(db, current_user.id)
+    prompt  = _build_analysis_prompt(pat, spese, fondi, polizze, reddito)
 
     text = await _call_claude(
         system="Sei un consulente finanziario esperto. Rispondi solo in JSON valido.",
@@ -681,7 +709,8 @@ async def chat_finanziario(
     spese   = await _build_spese_context(db, current_user.id)
     fondi   = await _build_fondi_pensione_context(db, current_user.id)
     polizze = await _build_polizze_context(db, current_user.id)
-    system  = _build_system_prompt(pat, spese, fondi, polizze)
+    reddito = await _build_reddito_context(db, current_user.id)
+    system  = _build_system_prompt(pat, spese, fondi, polizze, reddito)
 
     # Costruisce la lista messaggi: history + messaggio corrente
     messages = [{"role": m.role, "content": m.content} for m in body.history]
