@@ -634,24 +634,28 @@ async def _call_claude(system: str, messages: list[dict], max_tokens: int = 1500
             detail="ANTHROPIC_API_KEY non configurata nel file .env del backend.",
         )
 
+    import asyncio
+    payload = {"model": MODEL, "max_tokens": max_tokens, "system": system, "messages": messages}
+    headers = {
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+        "content-type": "application/json",
+    }
+    resp = None
     async with httpx.AsyncClient(timeout=90.0) as client:
-        resp = await client.post(
-            ANTHROPIC_URL,
-            headers={
-                "x-api-key": ANTHROPIC_API_KEY,
-                "anthropic-version": "2023-06-01",
-                "content-type": "application/json",
-            },
-            json={
-                "model": MODEL,
-                "max_tokens": max_tokens,
-                "system": system,
-                "messages": messages,
-            },
-        )
+        for attempt in range(4):
+            resp = await client.post(ANTHROPIC_URL, headers=headers, json=payload)
+            if resp.status_code == 200:
+                break
+            # rate limit / overloaded → backoff e riprova
+            if resp.status_code in (429, 529):
+                await asyncio.sleep(3 * (attempt + 1))
+                continue
+            break
 
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail=f"Anthropic API error: {resp.text[:300]}")
+    if resp is None or resp.status_code != 200:
+        detail = resp.text[:300] if resp is not None else "nessuna risposta"
+        raise HTTPException(status_code=502, detail=f"Anthropic API error: {detail}")
 
     return resp.json()["content"][0]["text"]
 
