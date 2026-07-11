@@ -6,13 +6,14 @@ stima del reddito annuo usata come base nelle analisi AI.
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, func, or_
 from app.db.session import get_db
 from app.core.security import get_current_user
-from app.models.models import BustaPaga
+from app.models.models import BustaPaga, Movimento, TipoMovimento, CategoriaSpesa
 from pydantic import BaseModel
 from decimal import Decimal
 from collections import defaultdict
+from datetime import date
 import uuid
 
 router = APIRouter()
@@ -125,6 +126,65 @@ def _sintesi_da_buste(buste: list[BustaPaga]) -> dict:
 async def sintesi_reddito(db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
     res = await db.execute(select(BustaPaga).where(BustaPaga.utente_id == current_user.id))
     return _sintesi_da_buste(res.scalars().all())
+
+
+@router.get("/confronto")
+async def confronto_reddito_spese(anno: int | None = None, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
+    """
+    Confronto mensile reddito (netto buste) vs spese (uscite del conto, escluse
+    le voci carta per non contare doppio con l'addebito di saldo carta).
+    """
+    res = await db.execute(select(BustaPaga).where(BustaPaga.utente_id == current_user.id))
+    buste = res.scalars().all()
+    anni_disp = sorted({b.anno for b in buste}, reverse=True)
+    if anno is None:
+        anno = anni_disp[0] if anni_disp else date.today().year
+
+    reddito_mese: dict[int, Decimal] = defaultdict(Decimal)
+    for b in buste:
+        if b.anno == anno:
+            reddito_mese[b.mese] += b.netto
+
+    # Escludi trasferimenti/risparmio (giroconti verso investimenti/PAC) dalle spese
+    escl_cat = select(CategoriaSpesa.id).where(CategoriaSpesa.nome.in_(["Investimenti"]))
+    r2 = await db.execute(
+        select(
+            func.extract("month", Movimento.data_operazione).label("m"),
+            func.coalesce(func.sum(Movimento.importo), 0).label("tot"),
+        )
+        .where(
+            Movimento.utente_id == current_user.id,
+            Movimento.tipo == TipoMovimento.uscita,
+            Movimento.is_carta_credito == False,
+            func.extract("year", Movimento.data_operazione) == anno,
+            or_(Movimento.categoria_id.is_(None), Movimento.categoria_id.notin_(escl_cat)),
+        )
+        .group_by("m")
+    )
+    spese_mese = {int(row.m): abs(Decimal(str(row.tot))) for row in r2.fetchall()}
+
+    mesi = sorted(set(reddito_mese) | set(spese_mese))
+    punti = []
+    for m in mesi:
+        red = float(reddito_mese.get(m, Decimal(0)))
+        spe = float(spese_mese.get(m, Decimal(0)))
+        punti.append({
+            "mese": m, "label": MESI[m - 1][:3],
+            "reddito": round(red, 2), "spese": round(spe, 2),
+            "risparmio": round(red - spe, 2),
+        })
+
+    tot_red = sum(p["reddito"] for p in punti)
+    tot_spe = sum(p["spese"] for p in punti)
+    return {
+        "anno": anno,
+        "anni_disponibili": anni_disp,
+        "punti": punti,
+        "totale_reddito": round(tot_red, 2),
+        "totale_spese": round(tot_spe, 2),
+        "risparmio": round(tot_red - tot_spe, 2),
+        "tasso_risparmio": round(100 * (tot_red - tot_spe) / tot_red, 1) if tot_red else 0.0,
+    }
 
 
 class BustaUpdate(BaseModel):

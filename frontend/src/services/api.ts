@@ -181,6 +181,8 @@ export const importaBustaPaga        = (f: File) => importCSV('busta-paga', f);
 // ── REDDITO ───────────────────────────────────────────
 export const getReddito        = () => api.get('/reddito/').then(r => r.data);
 export const getRedditoSintesi = () => api.get('/reddito/sintesi').then(r => r.data);
+export const getRedditoConfronto = (anno?: number) =>
+  api.get('/reddito/confronto', { params: anno ? { anno } : {} }).then(r => r.data);
 export const deleteBusta       = (id: string) => api.delete(`/reddito/${id}`).then(r => r.data);
 export const getBustaPdfBlob   = (id: string) => api.get(`/reddito/${id}/pdf`, { responseType: 'blob' }).then(r => r.data);
 export const updateBusta       = (id: string, data: { tipo_mensilita?: string; netto?: number; totale_competenze?: number }) =>

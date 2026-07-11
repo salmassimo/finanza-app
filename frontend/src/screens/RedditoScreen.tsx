@@ -3,8 +3,9 @@ import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { COLORS, fmt, fmtShort } from '../utils/format';
-import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta, getBustaPdfBlob, updateBusta } from '../services/api';
+import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta, getBustaPdfBlob, updateBusta, getRedditoConfronto } from '../services/api';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
+import MultiLineChart, { ScenarioLine } from '../components/MultiLineChart';
 
 const n = (v: any) => Number(v) || 0;
 const CHART_W = Math.min(Dimensions.get('window').width - 28, 900);
@@ -113,6 +114,13 @@ export default function RedditoScreen() {
     dateFull: `${b.mese_label} ${b.anno}`,
   }));
 
+  const { data: confronto } = useQuery({ queryKey: ['reddito-confronto', anno], queryFn: () => getRedditoConfronto(anno) });
+  const confPunti = (confronto?.punti || []) as any[];
+  const confLines: ScenarioLine[] = confPunti.length >= 2 ? [
+    { key: 'reddito', label: 'Reddito', color: COLORS.success, points: confPunti.map((p: any) => ({ label: p.label, value: n(p.reddito) })) },
+    { key: 'spese',   label: 'Spese',   color: COLORS.danger,  points: confPunti.map((p: any) => ({ label: p.label, value: n(p.spese) })) },
+  ] : [];
+
   return (
     <ScrollView
       style={st.container}
@@ -176,6 +184,31 @@ export default function RedditoScreen() {
           <Row label="Buste analizzate" value={String(annoCorrente.n_buste)} />
           <Row label="13ª / 14ª" value={`${annoCorrente.ha_tredicesima ? 'Sì' : '—'} / ${annoCorrente.ha_quattordicesima ? 'Sì' : '—'}`} />
           {annoCorrente.premi_netto > 0 && <Row label="Premi / una tantum (netto)" value={fmt(annoCorrente.premi_netto)} color={COLORS.warning} />}
+        </View>
+      )}
+
+      {/* Confronto reddito vs spese */}
+      {confLines.length > 0 && (
+        <View style={st.chartCard}>
+          <View style={st.chartHead}>
+            <Text style={st.cardTitle}>REDDITO vs SPESE {anno}</Text>
+            <View style={{ flexDirection: 'row', gap: 12 }}>
+              <Legend color={COLORS.success} label="Reddito" />
+              <Legend color={COLORS.danger} label="Spese" />
+            </View>
+          </View>
+          <MultiLineChart lines={confLines} width={CHART_W} height={190} />
+          <View style={st.savRow}>
+            <View>
+              <Text style={st.modalLabel}>RISPARMIO {anno}</Text>
+              <Text style={[st.savVal, { color: n(confronto?.risparmio) >= 0 ? COLORS.success : COLORS.danger }]}>{fmt(n(confronto?.risparmio))}</Text>
+            </View>
+            <View style={{ alignItems: 'flex-end' }}>
+              <Text style={st.modalLabel}>TASSO RISPARMIO</Text>
+              <Text style={[st.savVal, { color: COLORS.primary }]}>{n(confronto?.tasso_risparmio).toFixed(1)}%</Text>
+            </View>
+          </View>
+          <Text style={st.hint}>Spese = uscite del conto (escluse voci carta itemizzate e giroconti verso investimenti/PAC). Include mutuo e spese carta a saldo.</Text>
         </View>
       )}
 
@@ -254,6 +287,15 @@ export default function RedditoScreen() {
   );
 }
 
+function Legend({ color, label }: { color: string; label: string }) {
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
+      <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: color }} />
+      <Text style={{ color: COLORS.subtext, fontSize: 10, fontWeight: '700' }}>{label}</Text>
+    </View>
+  );
+}
+
 function Row({ label, value, color }: { label: string; value: string; color?: string }) {
   return (
     <View style={st.row}>
@@ -318,4 +360,7 @@ const st = StyleSheet.create({
   modalInput: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: COLORS.text, fontSize: 15 },
   modalBtns:  { flexDirection: 'row', gap: 10, marginTop: 20 },
   modalBtn:   { flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8, paddingVertical: 12 },
+
+  savRow:  { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-end', marginTop: 12, paddingTop: 12, borderTopWidth: 1, borderTopColor: COLORS.border + '55' },
+  savVal:  { fontSize: 18, fontWeight: '900', marginTop: 2 },
 });
