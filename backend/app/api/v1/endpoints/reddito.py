@@ -127,6 +127,31 @@ async def sintesi_reddito(db: AsyncSession = Depends(get_db), current_user=Depen
     return _sintesi_da_buste(res.scalars().all())
 
 
+class BustaUpdate(BaseModel):
+    tipo_mensilita: str | None = None
+    netto: Decimal | None = None
+    totale_competenze: Decimal | None = None
+    totale_trattenute: Decimal | None = None
+
+
+@router.patch("/{busta_id}")
+async def update_busta(busta_id: uuid.UUID, body: BustaUpdate, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
+    """Correzione manuale (quando l'analisi AI sbaglia tipo o importi)."""
+    b = await db.get(BustaPaga, busta_id)
+    if not b or b.utente_id != current_user.id:
+        raise HTTPException(404, "Busta paga non trovata")
+    if body.tipo_mensilita is not None:
+        b.tipo_mensilita = body.tipo_mensilita
+    if body.netto is not None:
+        b.netto = body.netto
+    if body.totale_competenze is not None:
+        b.totale_competenze = body.totale_competenze
+    if body.totale_trattenute is not None:
+        b.totale_trattenute = body.totale_trattenute
+    await db.commit()
+    return {"ok": True}
+
+
 @router.delete("/{busta_id}")
 async def delete_busta(busta_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
     b = await db.get(BustaPaga, busta_id)

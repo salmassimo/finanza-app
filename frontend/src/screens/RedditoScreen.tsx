@@ -1,9 +1,9 @@
 import React, { useRef, useState, useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Dimensions } from 'react-native';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Dimensions, Modal, TextInput, Pressable } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { COLORS, fmt, fmtShort } from '../utils/format';
-import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta, getBustaPdfBlob } from '../services/api';
+import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta, getBustaPdfBlob, updateBusta } from '../services/api';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 
 const n = (v: any) => Number(v) || 0;
@@ -37,6 +37,35 @@ export default function RedditoScreen() {
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [chartMode, setChartMode] = useState<'netto' | 'lordo'>('netto');
+  const [editBusta, setEditBusta] = useState<any>(null);
+  const [editTipo, setEditTipo] = useState('ordinaria');
+  const [editNetto, setEditNetto] = useState('');
+  const [editLordo, setEditLordo] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const openEdit = (b: any) => {
+    setEditBusta(b);
+    setEditTipo(b.tipo_mensilita);
+    setEditNetto(String(n(b.netto)));
+    setEditLordo(String(n(b.totale_competenze)));
+  };
+
+  const salvaEdit = async () => {
+    if (!editBusta) return;
+    setSaving(true);
+    try {
+      await updateBusta(String(editBusta.id), {
+        tipo_mensilita: editTipo,
+        netto: parseFloat(editNetto.replace(',', '.')) || 0,
+        totale_competenze: parseFloat(editLordo.replace(',', '.')) || 0,
+      });
+      qc.invalidateQueries({ queryKey: ['reddito'] });
+      qc.invalidateQueries({ queryKey: ['reddito-sintesi'] });
+      setEditBusta(null);
+    } finally {
+      setSaving(false);
+    }
+  };
 
   const { data: sintesi, isLoading: loadS, refetch: refS, isRefetching } = useQuery({ queryKey: ['reddito-sintesi'], queryFn: getRedditoSintesi });
   const { data: buste = [], refetch: refB } = useQuery({ queryKey: ['reddito'], queryFn: getReddito });
@@ -171,6 +200,9 @@ export default function RedditoScreen() {
                 <Text style={st.bustaSub}>Lordo {fmtShort(n(b.totale_competenze))} · Trattenute {fmtShort(n(b.totale_trattenute))}</Text>
               </View>
               <Text style={st.bustaNetto}>{fmt(n(b.netto))}</Text>
+              <TouchableOpacity onPress={() => openEdit(b)} style={{ paddingLeft: 10 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="create-outline" size={16} color={COLORS.subtext} />
+              </TouchableOpacity>
               {b.has_pdf && (
                 <TouchableOpacity onPress={() => openPdf(b.id)} style={{ paddingLeft: 10 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                   <Ionicons name="document-text-outline" size={16} color={COLORS.primary} />
@@ -183,6 +215,41 @@ export default function RedditoScreen() {
           );
         })
       )}
+
+      {/* Modale correzione manuale */}
+      <Modal visible={!!editBusta} transparent animationType="fade" onRequestClose={() => setEditBusta(null)}>
+        <Pressable style={st.backdrop} onPress={() => setEditBusta(null)}>
+          <Pressable style={st.modal} onPress={(e: any) => e.stopPropagation?.()}>
+            <Text style={st.modalTitle}>
+              Correggi {editBusta?.mese_label} {editBusta?.anno}
+            </Text>
+
+            <Text style={st.modalLabel}>TIPO MENSILITÀ</Text>
+            <View style={st.tipoWrap}>
+              {Object.keys(TIPO_META).map(k => (
+                <TouchableOpacity key={k} style={[st.tipoChip, editTipo === k && st.tipoChipActive]} onPress={() => setEditTipo(k)}>
+                  <Text style={[st.tipoTxt, editTipo === k && st.tipoTxtActive]}>{TIPO_META[k].label}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={st.modalLabel}>NETTO (€)</Text>
+            <TextInput style={st.modalInput} value={editNetto} onChangeText={setEditNetto} keyboardType="decimal-pad" placeholderTextColor={COLORS.subtext} />
+
+            <Text style={st.modalLabel}>LORDO / TOTALE COMPETENZE (€)</Text>
+            <TextInput style={st.modalInput} value={editLordo} onChangeText={setEditLordo} keyboardType="decimal-pad" placeholderTextColor={COLORS.subtext} />
+
+            <View style={st.modalBtns}>
+              <TouchableOpacity style={[st.modalBtn, { borderColor: COLORS.border }]} onPress={() => setEditBusta(null)}>
+                <Text style={{ color: COLORS.subtext, fontWeight: '700' }}>Annulla</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[st.modalBtn, { backgroundColor: COLORS.primary, borderColor: COLORS.primary }]} onPress={salvaEdit} disabled={saving}>
+                {saving ? <ActivityIndicator size="small" color="#000" /> : <Text style={{ color: '#000', fontWeight: '800' }}>Salva</Text>}
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </ScrollView>
   );
 }
@@ -238,4 +305,17 @@ const st = StyleSheet.create({
   bustaNetto:{ color: COLORS.success, fontSize: 14, fontWeight: '800' },
   badge:     { borderRadius: 4, paddingHorizontal: 7, paddingVertical: 2 },
   badgeTxt:  { fontSize: 9, fontWeight: '800' },
+
+  backdrop:   { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  modal:      { width: '100%', maxWidth: 420, backgroundColor: '#0B1322', borderRadius: 14, borderWidth: 1, borderColor: COLORS.border, padding: 18 },
+  modalTitle: { color: COLORS.text, fontSize: 16, fontWeight: '800', marginBottom: 14 },
+  modalLabel: { color: COLORS.subtext, fontSize: 9, fontWeight: '800', letterSpacing: 1.5, marginTop: 12, marginBottom: 6 },
+  tipoWrap:   { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  tipoChip:   { borderWidth: 1, borderColor: COLORS.border, borderRadius: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  tipoChipActive: { backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  tipoTxt:    { color: COLORS.subtext, fontSize: 12, fontWeight: '700' },
+  tipoTxtActive: { color: COLORS.primary },
+  modalInput: { backgroundColor: COLORS.surface, borderWidth: 1, borderColor: COLORS.border, borderRadius: 8, paddingHorizontal: 12, paddingVertical: 10, color: COLORS.text, fontSize: 15 },
+  modalBtns:  { flexDirection: 'row', gap: 10, marginTop: 20 },
+  modalBtn:   { flex: 1, alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderRadius: 8, paddingVertical: 12 },
 });
