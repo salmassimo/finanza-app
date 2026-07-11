@@ -43,6 +43,16 @@ async def lifespan(app: FastAPI):
                 db.add(CategoriaSpesa(**cat))
         await db.commit()
 
+        # Backfill: ricategorizza i giroconti/ricariche già importati come "Trasferimenti"
+        # (idempotente: aggiorna solo le righe non ancora Trasferimenti che matchano).
+        await db.execute(text("""
+            UPDATE movimenti SET categoria_id = (SELECT id FROM categorie_spese WHERE nome='Trasferimenti')
+            WHERE tipo = 'uscita'
+              AND descrizione ~* '(giroconto|gircont|giro conto|girofondi|ricarica carta|trasferimento tra conti)'
+              AND categoria_id IS DISTINCT FROM (SELECT id FROM categorie_spese WHERE nome='Trasferimenti')
+        """))
+        await db.commit()
+
     # Avvia scheduler cron job aggiornamento prezzi alle 18:30 ogni giorno
     from app.db.session import AsyncSessionLocal
     from app.services.prezzi import aggiorna_tutti_i_prezzi

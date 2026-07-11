@@ -323,7 +323,8 @@ CATEGORIE_DEFAULT = [
     {"nome": "Contante",          "colore": "#D1D5DB", "icona": "cash",             "ordine": 14},
     {"nome": "Tasse",             "colore": "#EF4444", "icona": "receipt",          "ordine": 15},
     {"nome": "Investimenti",      "colore": "#10B981", "icona": "analytics",        "ordine": 16},
-    {"nome": "Bonifici",          "colore": "#94A3B8", "icona": "swap-horizontal",  "ordine": 17},
+    {"nome": "Trasferimenti",     "colore": "#64748B", "icona": "swap-horizontal",  "ordine": 17},
+    {"nome": "Bonifici",          "colore": "#94A3B8", "icona": "swap-horizontal",  "ordine": 18},
     {"nome": "Carta di Credito",  "colore": "#6B7280", "icona": "card",             "ordine": 18},
     {"nome": "Altro",             "colore": "#9CA3AF", "icona": "ellipsis-horizontal","ordine": 99},
 ]

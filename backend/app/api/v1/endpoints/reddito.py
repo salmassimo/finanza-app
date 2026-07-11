@@ -146,7 +146,7 @@ async def confronto_reddito_spese(anno: int | None = None, db: AsyncSession = De
             reddito_mese[b.mese] += b.netto
 
     # Escludi trasferimenti/risparmio (giroconti verso investimenti/PAC) dalle spese
-    escl_cat = select(CategoriaSpesa.id).where(CategoriaSpesa.nome.in_(["Investimenti"]))
+    escl_cat = select(CategoriaSpesa.id).where(CategoriaSpesa.nome.in_(["Investimenti", "Trasferimenti"]))
     r2 = await db.execute(
         select(
             func.extract("month", Movimento.data_operazione).label("m"),

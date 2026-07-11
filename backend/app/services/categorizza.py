@@ -3,6 +3,9 @@ import re
 
 # (pattern_regex, nome_categoria)
 REGOLE = [
+    # Trasferimenti interni (giroconti / ricariche carta / bonifici tra propri conti)
+    # → NON sono spese di consumo: esclusi dal confronto reddito/spese.
+    (r"\bGIROCONTO\b|\bGIRCONTO\b|GIRO CONTO|GIROFONDI|RICARICA CARTA|TRASFERIMENTO TRA CONTI|GIRO DI FONDI|BONIFICO A ME STESSO", "Trasferimenti"),
     # Reddito
     (r"STIPENDIO|SALARIO|ACCREDITO STIPENDIO|PENSIONE|TREDICESIMA|QUATTORDICESIMA|VOSTRI EMOLUMENTI|BONIFICO.*FAVORE|ACCREDITO.*BONIFICO", "Reddito"),
     # Mutuo
