@@ -1821,7 +1821,13 @@ async def importa_busta_paga(
     exists = await db.execute(
         select(BustaPaga).where(BustaPaga.external_id == ext_id, BustaPaga.utente_id == current_user.id)
     )
-    if exists.scalar_one_or_none():
+    gia = exists.scalar_one_or_none()
+    if gia:
+        # Archivia il PDF se mancante (es. busta importata prima di questa feature)
+        if not gia.file_pdf:
+            gia.file_pdf = content
+            gia.file_nome = file.filename
+            await db.commit()
         return {"stato": "gia_presente", "anno": anno, "mese": mese, "tipo": tipo, "netto": float(netto)}
 
     bp = BustaPaga(
@@ -1830,6 +1836,7 @@ async def importa_busta_paga(
         totale_competenze=Decimal(str(d.get("totale_competenze") or 0)),
         totale_trattenute=Decimal(str(d.get("totale_trattenute") or 0)),
         netto=netto, voci=d.get("voci") or [], fonte="pdf", external_id=ext_id,
+        file_nome=file.filename, file_pdf=content,
     )
     db.add(bp)
     await db.commit()

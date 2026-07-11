@@ -4,6 +4,7 @@ Fornisce la lista, una sintesi annuale (netto/lordo, 13ª/14ª/premi) e la
 stima del reddito annuo usata come base nelle analisi AI.
 """
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from app.db.session import get_db
@@ -35,6 +36,7 @@ class BustaOut(BaseModel):
     totale_trattenute: Decimal
     netto: Decimal
     voci: list | None
+    has_pdf: bool = False
 
     class Config:
         from_attributes = True
@@ -52,10 +54,24 @@ async def list_buste(db: AsyncSession = Depends(get_db), current_user=Depends(ge
             id=b.id, anno=b.anno, mese=b.mese, mese_label=MESI[b.mese - 1],
             azienda=b.azienda, tipo_mensilita=b.tipo_mensilita,
             totale_competenze=b.totale_competenze, totale_trattenute=b.totale_trattenute,
-            netto=b.netto, voci=b.voci or [],
+            netto=b.netto, voci=b.voci or [], has_pdf=b.file_pdf is not None,
         )
         for b in res.scalars().all()
     ]
+
+
+@router.get("/{busta_id}/pdf")
+async def get_busta_pdf(busta_id: uuid.UUID, db: AsyncSession = Depends(get_db), current_user=Depends(get_current_user)):
+    b = await db.get(BustaPaga, busta_id)
+    if not b or b.utente_id != current_user.id:
+        raise HTTPException(404, "Busta paga non trovata")
+    if not b.file_pdf:
+        raise HTTPException(404, "PDF non archiviato per questa busta")
+    return Response(
+        content=b.file_pdf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="busta_{b.anno}_{b.mese:02d}.pdf"'},
+    )
 
 
 def _sintesi_da_buste(buste: list[BustaPaga]) -> dict:

@@ -1,11 +1,25 @@
-import React, { useRef, useState } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
+import React, { useRef, useState, useMemo } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, ActivityIndicator, RefreshControl, Platform, Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { COLORS, fmt, fmtShort } from '../utils/format';
-import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta } from '../services/api';
+import { getReddito, getRedditoSintesi, importaBustaPaga, deleteBusta, getBustaPdfBlob } from '../services/api';
+import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 
 const n = (v: any) => Number(v) || 0;
+const CHART_W = Math.min(Dimensions.get('window').width - 28, 900);
+const MESI_ABBR = ['Gen', 'Feb', 'Mar', 'Apr', 'Mag', 'Giu', 'Lug', 'Ago', 'Set', 'Ott', 'Nov', 'Dic'];
+
+const openPdf = async (id: string) => {
+  try {
+    const blob = await getBustaPdfBlob(id);
+    if (Platform.OS === 'web') {
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 60000);
+    }
+  } catch { /* pdf non disponibile */ }
+};
 
 const TIPO_META: Record<string, { label: string; color: string }> = {
   ordinaria:       { label: 'Ordinaria',    color: COLORS.primary },
@@ -21,6 +35,8 @@ export default function RedditoScreen() {
   const inputRef = useRef<any>(null);
   const [uploading, setUploading] = useState(false);
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
+  const [selectedYear, setSelectedYear] = useState<number | null>(null);
+  const [chartMode, setChartMode] = useState<'netto' | 'lordo'>('netto');
 
   const { data: sintesi, isLoading: loadS, refetch: refS, isRefetching } = useQuery({ queryKey: ['reddito-sintesi'], queryFn: getRedditoSintesi });
   const { data: buste = [], refetch: refB } = useQuery({ queryKey: ['reddito'], queryFn: getReddito });
@@ -51,7 +67,22 @@ export default function RedditoScreen() {
     qc.invalidateQueries({ queryKey: ['reddito-sintesi'] });
   };
 
-  const annoCorrente = sintesi?.anni?.[0];
+  const listaBuste = buste as any[];
+  const years = useMemo(
+    () => Array.from(new Set(listaBuste.map((b: any) => b.anno))).sort((a: number, b: number) => b - a),
+    [listaBuste],
+  );
+  const anno = selectedYear ?? years[0] ?? new Date().getFullYear();
+  const yearBuste = useMemo(
+    () => listaBuste.filter((b: any) => b.anno === anno).sort((a: any, b: any) => a.mese - b.mese),
+    [listaBuste, anno],
+  );
+  const annoCorrente = sintesi?.anni?.find((a: any) => a.anno === anno);
+  const chartPts: ChartPoint[] = yearBuste.map((b: any) => ({
+    value: chartMode === 'netto' ? n(b.netto) : n(b.totale_competenze),
+    label: MESI_ABBR[b.mese - 1],
+    dateFull: `${b.mese_label} ${b.anno}`,
+  }));
 
   return (
     <ScrollView
@@ -79,6 +110,34 @@ export default function RedditoScreen() {
       <Text style={st.hint}>Il sistema analizza la busta (stipendio, 13ª/14ª, premi) e aggiorna il reddito usato dall'AI.</Text>
       {msg && <Text style={[st.msg, { color: msg.ok ? COLORS.success : COLORS.danger }]}>{msg.text}</Text>}
 
+      {/* Selettore anno di osservazione */}
+      {years.length > 0 && (
+        <View style={st.yearRow}>
+          {years.map((y: number) => (
+            <TouchableOpacity key={y} style={[st.yearChip, y === anno && st.yearChipActive]} onPress={() => setSelectedYear(y)}>
+              <Text style={[st.yearTxt, y === anno && st.yearTxtActive]}>{y}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
+
+      {/* Grafico retribuzioni mensili */}
+      {chartPts.length >= 2 && (
+        <View style={st.chartCard}>
+          <View style={st.chartHead}>
+            <Text style={st.cardTitle}>RETRIBUZIONI MENSILI {anno}</Text>
+            <View style={{ flexDirection: 'row', gap: 6 }}>
+              {(['netto', 'lordo'] as const).map(m => (
+                <TouchableOpacity key={m} style={[st.modeBtn, chartMode === m && st.modeBtnActive]} onPress={() => setChartMode(m)}>
+                  <Text style={[st.modeTxt, chartMode === m && st.modeTxtActive]}>{m === 'netto' ? 'Netto' : 'Lordo'}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+          <FinanceChart points={chartPts} width={CHART_W} height={190} color={COLORS.success} formatY={fmtYValue} tooltipFormat={fmt} />
+        </View>
+      )}
+
       {/* Dettaglio anno corrente */}
       {annoCorrente && (
         <View style={st.card}>
@@ -91,14 +150,14 @@ export default function RedditoScreen() {
         </View>
       )}
 
-      {/* Lista buste */}
-      <Text style={st.sectionTitle}>BUSTE PAGA</Text>
+      {/* Lista buste dell'anno selezionato */}
+      <Text style={st.sectionTitle}>BUSTE PAGA {anno}</Text>
       {loadS ? (
         <ActivityIndicator color={COLORS.primary} style={{ marginTop: 20 }} />
-      ) : (buste as any[]).length === 0 ? (
-        <Text style={st.empty}>Nessuna busta paga. Carica un PDF per iniziare.</Text>
+      ) : yearBuste.length === 0 ? (
+        <Text style={st.empty}>Nessuna busta paga per il {anno}. Carica un PDF per iniziare.</Text>
       ) : (
-        (buste as any[]).map((b: any) => {
+        yearBuste.map((b: any) => {
           const meta = TIPO_META[b.tipo_mensilita] || TIPO_META.altro;
           return (
             <View key={b.id} style={st.bustaRow}>
@@ -112,6 +171,11 @@ export default function RedditoScreen() {
                 <Text style={st.bustaSub}>Lordo {fmtShort(n(b.totale_competenze))} · Trattenute {fmtShort(n(b.totale_trattenute))}</Text>
               </View>
               <Text style={st.bustaNetto}>{fmt(n(b.netto))}</Text>
+              {b.has_pdf && (
+                <TouchableOpacity onPress={() => openPdf(b.id)} style={{ paddingLeft: 10 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                  <Ionicons name="document-text-outline" size={16} color={COLORS.primary} />
+                </TouchableOpacity>
+              )}
               <TouchableOpacity onPress={() => rimuovi(b.id)} style={{ paddingLeft: 10 }} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
                 <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
               </TouchableOpacity>
@@ -148,6 +212,19 @@ const st = StyleSheet.create({
 
   card:        { backgroundColor: COLORS.surface, borderRadius: 10, padding: 14, marginTop: 14, borderWidth: 1, borderColor: COLORS.border },
   cardTitle:   { fontSize: 9, color: COLORS.subtext, fontWeight: '800', letterSpacing: 2, marginBottom: 10 },
+
+  yearRow:      { flexDirection: 'row', gap: 8, marginTop: 14, marginBottom: 4, flexWrap: 'wrap' },
+  yearChip:     { borderWidth: 1, borderColor: COLORS.border, borderRadius: 20, paddingHorizontal: 16, paddingVertical: 7 },
+  yearChipActive:{ backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  yearTxt:      { color: COLORS.subtext, fontSize: 13, fontWeight: '700' },
+  yearTxtActive:{ color: COLORS.primary },
+
+  chartCard:    { backgroundColor: COLORS.surface, borderRadius: 10, padding: 14, marginTop: 10, borderWidth: 1, borderColor: COLORS.border },
+  chartHead:    { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 },
+  modeBtn:      { borderWidth: 1, borderColor: COLORS.border, borderRadius: 6, paddingHorizontal: 10, paddingVertical: 4 },
+  modeBtnActive:{ backgroundColor: COLORS.primary + '22', borderColor: COLORS.primary },
+  modeTxt:      { color: COLORS.subtext, fontSize: 11, fontWeight: '700' },
+  modeTxtActive:{ color: COLORS.primary },
   row:         { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 7, borderBottomWidth: 1, borderBottomColor: COLORS.border + '44' },
   rowLabel:    { color: COLORS.subtext, fontSize: 12 },
   rowValue:    { color: COLORS.text, fontWeight: '700', fontSize: 13 },

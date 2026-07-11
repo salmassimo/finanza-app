@@ -182,6 +182,7 @@ export const importaBustaPaga        = (f: File) => importCSV('busta-paga', f);
 export const getReddito        = () => api.get('/reddito/').then(r => r.data);
 export const getRedditoSintesi = () => api.get('/reddito/sintesi').then(r => r.data);
 export const deleteBusta       = (id: string) => api.delete(`/reddito/${id}`).then(r => r.data);
+export const getBustaPdfBlob   = (id: string) => api.get(`/reddito/${id}/pdf`, { responseType: 'blob' }).then(r => r.data);
 export const importaConti           = (f: File) => importCSV('conti', f);
 export const importaMutui           = (f: File) => importCSV('mutui', f);
 export const importaPianoAmmortamento = (f: File) => importCSV('piano-ammortamento', f);

@@ -25,6 +25,8 @@ async def lifespan(app: FastAPI):
             "ALTER TABLE categorie_spese ADD COLUMN IF NOT EXISTS ordine INTEGER DEFAULT 99",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_movimenti_external_id ON movimenti(external_id) WHERE external_id IS NOT NULL",
             "ALTER TABLE piano_ammortamento ADD COLUMN IF NOT EXISTS capitale_residuo_dopo NUMERIC(12,2)",
+            "ALTER TABLE buste_paga ADD COLUMN IF NOT EXISTS file_nome VARCHAR(255)",
+            "ALTER TABLE buste_paga ADD COLUMN IF NOT EXISTS file_pdf BYTEA",
         ]:
             await conn.execute(text(stmt))
 

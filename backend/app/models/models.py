@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, date
 from decimal import Decimal
-from sqlalchemy import String, Numeric, Boolean, Integer, Date, Text, ForeignKey, Enum as SAEnum, JSON, TIMESTAMP
+from sqlalchemy import String, Numeric, Boolean, Integer, Date, Text, ForeignKey, Enum as SAEnum, JSON, TIMESTAMP, LargeBinary
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.db.session import Base
@@ -457,5 +457,7 @@ class BustaPaga(Base):
     fonte:              Mapped[str]       = mapped_column(String(50), default="pdf")
     external_id:        Mapped[str|None]  = mapped_column(String(255), index=True)  # dedup
     note:               Mapped[str|None]  = mapped_column(Text)
+    file_nome:          Mapped[str|None]  = mapped_column(String(255))              # nome PDF originale
+    file_pdf:           Mapped[bytes|None] = mapped_column(LargeBinary)             # PDF archiviato
     created_at:         Mapped[datetime]  = mapped_column(TIMESTAMP(timezone=True), default=datetime.utcnow)
 
