@@ -163,6 +163,9 @@ export const createOrologio = (data: any) =>
 export const deleteOrologio = (id: string) =>
   api.delete(`/orologi/${id}`).then(r => r.data);
 
+export const updateOrologio = (id: string, data: { prezzo_acquisto?: number; anno_acquisto?: number; stima_min?: number; stima_max?: number }) =>
+  api.patch(`/orologi/${id}`, data).then(r => r.data);
+
 // ── MOVIMENTI ─────────────────────────────────────────
 export const getMovimenti = (params?: { mese?: string }) =>
   api.get('/movimenti/', { params }).then(r => r.data);

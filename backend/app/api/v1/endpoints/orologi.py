@@ -121,11 +121,45 @@ class OrologioOut(BaseModel):
     nome: str
     riferimento: str | None
     anno_acquisto: int | None
+    prezzo_acquisto: Optional[Decimal] = None
     stima_min: Decimal
     stima_max: Decimal
+    valore_medio: Decimal
+    pnl: Optional[Decimal] = None          # valore medio - prezzo acquisto
 
     class Config:
         from_attributes = True
+
+
+class OrologioUpdate(BaseModel):
+    prezzo_acquisto: Optional[float] = None
+    anno_acquisto: Optional[int] = None
+    stima_min: Optional[float] = None
+    stima_max: Optional[float] = None
+
+
+@router.patch("/{orologio_id}")
+async def update_orologio(
+    orologio_id: uuid.UUID,
+    body: OrologioUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user=Depends(get_current_user),
+):
+    """Aggiorna prezzo/anno di acquisto e, se fornita, la stima (nuovo snapshot)."""
+    o = await db.get(Orologio, orologio_id)
+    if not o or o.utente_id != current_user.id:
+        raise HTTPException(404, "Orologio non trovato")
+    if body.prezzo_acquisto is not None:
+        o.prezzo_acquisto = Decimal(str(body.prezzo_acquisto))
+    if body.anno_acquisto is not None:
+        o.anno_acquisto = body.anno_acquisto
+    if body.stima_min is not None and body.stima_max is not None:
+        db.add(OrologioSnapshot(
+            orologio_id=o.id, stima_min=Decimal(str(body.stima_min)),
+            stima_max=Decimal(str(body.stima_max)), fonte="perizia", rilevato_at=datetime.utcnow(),
+        ))
+    await db.commit()
+    return {"ok": True}
 
 
 @router.get("/", response_model=List[OrologioOut])
@@ -169,6 +203,8 @@ async def get_orologi(
         snap = snapshots.get(or_.id)
         stima_min = snap.stima_min if snap else Decimal("0")
         stima_max = snap.stima_max if snap else Decimal("0")
+        valore_medio = (stima_min + stima_max) / 2
+        pnl = (valore_medio - or_.prezzo_acquisto) if or_.prezzo_acquisto is not None else None
 
         output.append(
             OrologioOut(
@@ -178,8 +214,11 @@ async def get_orologi(
                 nome=f"{or_.marca} {or_.modello}",
                 riferimento=or_.riferimento,
                 anno_acquisto=or_.anno_acquisto,
+                prezzo_acquisto=or_.prezzo_acquisto,
                 stima_min=stima_min,
                 stima_max=stima_max,
+                valore_medio=valore_medio,
+                pnl=pnl,
             )
         )
 

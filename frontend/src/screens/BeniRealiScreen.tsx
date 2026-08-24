@@ -4,14 +4,15 @@ import { Ionicons } from '@expo/vector-icons';
 import { useQueryClient, useMutation } from '@tanstack/react-query';
 import { useImmobili, useOrologi } from '../hooks/useData';
 import { KpiCard, Card, RowItem, LoadingView, ProgressBar } from '../components/common';
-import { COLORS, fmt, fmtShort } from '../utils/format';
-import { createOrologio, deleteOrologio } from '../services/api';
+import { COLORS, fmt, fmtShort, colorPL } from '../utils/format';
+import { createOrologio, deleteOrologio, updateOrologio } from '../services/api';
 
 export default function BeniRealiScreen() {
   const qc = useQueryClient();
   const { data: immobili, isLoading: loadImm } = useImmobili();
   const { data: orologi,  isLoading: loadOr  } = useOrologi();
   const [showAdd, setShowAdd] = useState(false);
+  const [editWatch, setEditWatch] = useState<any>(null);
 
   const rimuoviOrologio = async (id: string) => {
     await deleteOrologio(id);
@@ -90,16 +91,31 @@ export default function BeniRealiScreen() {
                   <Text style={s.cardName}>{or.nome || `${or.marca} ${or.modello}`}</Text>
                   <Text style={s.cardSub}>Ref. {or.riferimento}</Text>
                 </View>
-                <TouchableOpacity onPress={() => rimuoviOrologio(or.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                  <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
-                </TouchableOpacity>
+                <View style={{ flexDirection: 'row', gap: 12 }}>
+                  <TouchableOpacity onPress={() => setEditWatch(or)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="create-outline" size={16} color={COLORS.subtext} />
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={() => rimuoviOrologio(or.id)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                    <Ionicons name="trash-outline" size={16} color={COLORS.danger} />
+                  </TouchableOpacity>
+                </View>
               </View>
               <RowItem label="Stima minima"  value={fmt(or.stima_min)} />
               <RowItem label="Stima massima" value={fmt(or.stima_max)} />
+              <RowItem label="Prezzo acquisto" value={or.prezzo_acquisto != null ? fmt(or.prezzo_acquisto) : '—'} />
               <View style={s.totRow}>
                 <Text style={s.totLabel}>Valore medio stimato</Text>
-                <Text style={[s.totValue, { color: COLORS.warning }]}>{fmt((n(or.stima_min) + n(or.stima_max)) / 2)}</Text>
+                <Text style={[s.totValue, { color: COLORS.warning }]}>{fmt(n(or.valore_medio))}</Text>
               </View>
+              {or.pnl != null && (
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 }}>
+                  <Text style={s.totLabel}>P&L vs acquisto</Text>
+                  <Text style={{ fontWeight: '800', fontSize: 13, color: colorPL(or.pnl) }}>
+                    {n(or.pnl) >= 0 ? '+' : ''}{fmt(or.pnl)}
+                    {or.prezzo_acquisto ? ` (${n(or.pnl) >= 0 ? '+' : ''}${((n(or.pnl) / n(or.prezzo_acquisto)) * 100).toFixed(1)}%)` : ''}
+                  </Text>
+                </View>
+              )}
             </Card>
           ))}
         </View>
@@ -111,7 +127,62 @@ export default function BeniRealiScreen() {
         qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
         setShowAdd(false);
       }} />
+
+      <EditOrologioModal watch={editWatch} onClose={() => setEditWatch(null)} onSaved={() => {
+        qc.invalidateQueries({ queryKey: ['orologi'] });
+        qc.invalidateQueries({ queryKey: ['patrimonio-live'] });
+        setEditWatch(null);
+      }} />
     </ScrollView>
+  );
+}
+
+// ── Modifica prezzo/stima orologio ─────────────────────
+function EditOrologioModal({ watch, onClose, onSaved }: { watch: any; onClose: () => void; onSaved: () => void }) {
+  const [prezzo, setPrezzo] = useState('');
+  const [sMin, setSMin] = useState('');
+  const [sMax, setSMax] = useState('');
+  React.useEffect(() => {
+    if (watch) {
+      setPrezzo(watch.prezzo_acquisto != null ? String(Number(watch.prezzo_acquisto)) : '');
+      setSMin(String(Number(watch.stima_min) || ''));
+      setSMax(String(Number(watch.stima_max) || ''));
+    }
+  }, [watch]);
+
+  const salva = useMutation({
+    mutationFn: () => {
+      const data: any = {};
+      if (prezzo) data.prezzo_acquisto = parseFloat(prezzo.replace(',', '.'));
+      if (sMin && sMax) { data.stima_min = parseFloat(sMin.replace(',', '.')); data.stima_max = parseFloat(sMax.replace(',', '.')); }
+      return updateOrologio(String(watch.id), data);
+    },
+    onSuccess: onSaved,
+  });
+
+  return (
+    <Modal visible={!!watch} transparent animationType="fade" onRequestClose={onClose}>
+      <Pressable style={s.backdrop} onPress={onClose}>
+        <Pressable style={s.modal} onPress={(e: any) => e.stopPropagation?.()}>
+          <Text style={s.modalTitle}>{watch?.marca} {watch?.modello}</Text>
+          <Text style={s.modalLabel}>PREZZO DI ACQUISTO (€)</Text>
+          <TextInput style={s.modalInput} value={prezzo} onChangeText={setPrezzo} placeholder="es. 8000" placeholderTextColor={COLORS.subtext} keyboardType="decimal-pad" />
+          <Text style={[s.modalLabel, { marginTop: 12 }]}>STIMA € (min / max)</Text>
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            <TextInput style={[s.modalInput, { flex: 1 }]} value={sMin} onChangeText={setSMin} placeholder="min" placeholderTextColor={COLORS.subtext} keyboardType="decimal-pad" />
+            <TextInput style={[s.modalInput, { flex: 1 }]} value={sMax} onChangeText={setSMax} placeholder="max" placeholderTextColor={COLORS.subtext} keyboardType="decimal-pad" />
+          </View>
+          <View style={s.modalBtns}>
+            <TouchableOpacity style={[s.modalBtn, { borderColor: COLORS.border }]} onPress={onClose}>
+              <Text style={{ color: COLORS.subtext, fontWeight: '700' }}>Annulla</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[s.modalBtn, { backgroundColor: COLORS.warning, borderColor: COLORS.warning }]} onPress={() => salva.mutate()} disabled={salva.isPending}>
+              {salva.isPending ? <ActivityIndicator size="small" color="#000" /> : <Text style={{ color: '#000', fontWeight: '800' }}>Salva</Text>}
+            </TouchableOpacity>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
   );
 }
 
