@@ -157,6 +157,12 @@ export const getImmobili = () =>
 export const getOrologi = () =>
   api.get('/orologi/').then(r => r.data);
 
+export const createOrologio = (data: any) =>
+  api.post('/orologi/', data).then(r => r.data);
+
+export const deleteOrologio = (id: string) =>
+  api.delete(`/orologi/${id}`).then(r => r.data);
+
 // ── MOVIMENTI ─────────────────────────────────────────
 export const getMovimenti = (params?: { mese?: string }) =>
   api.get('/movimenti/', { params }).then(r => r.data);
