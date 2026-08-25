@@ -3,7 +3,7 @@ import { View, Text, ScrollView, StyleSheet, ActivityIndicator, TouchableOpacity
 import { Dimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
-import { COLORS, fmt, fmtShort } from '../utils/format';
+import { COLORS, fmt, fmtShort, colorPL } from '../utils/format';
 import FinanceChart, { ChartPoint, fmtYValue } from '../components/FinanceChart';
 import api from '../services/api';
 
@@ -275,20 +275,34 @@ export default function PatrimonioScreen() {
         )}
 
         {/* 4 — BENI OROLOGI */}
-        {(orologi as any[]).length > 0 && (
-          <SectionCard title="BENI (OROLOGI)" icon="time-outline">
-            {(orologi as any[]).map((or: any) => {
-              const media = (n(or.stima_min) + n(or.stima_max)) / 2;
-              return <Row key={or.id} label={`${or.marca} ${or.modello}`} sub={`Rif. ${or.riferimento || '—'}`} value={fmt(media)} color={COLORS.warning} />;
-            })}
-            {orVal > 0 && (
-              <>
-                <View style={st.divider} />
-                <Row label="Totale beni" value={fmt(orVal)} color={COLORS.warning} bold />
-              </>
-            )}
-          </SectionCard>
-        )}
+        {(orologi as any[]).length > 0 && (() => {
+          const totSpeso = (orologi as any[]).reduce((s: number, o: any) => s + n(o.prezzo_acquisto), 0);
+          const totPnl   = (orologi as any[]).reduce((s: number, o: any) => s + (o.pnl != null ? n(o.pnl) : 0), 0);
+          const hasCosti = (orologi as any[]).some((o: any) => o.prezzo_acquisto != null);
+          return (
+            <SectionCard title="BENI (OROLOGI)" icon="time-outline">
+              {(orologi as any[]).map((or: any) => {
+                const media = or.valore_medio != null ? n(or.valore_medio) : (n(or.stima_min) + n(or.stima_max)) / 2;
+                const pnlSub = or.pnl != null
+                  ? `Acq. ${fmt(or.prezzo_acquisto)} · P&L ${n(or.pnl) >= 0 ? '+' : ''}${fmt(or.pnl)}`
+                  : `Rif. ${or.riferimento || '—'}`;
+                return <Row key={or.id} label={`${or.marca} ${or.modello}`} sub={pnlSub} value={fmt(media)} color={COLORS.warning} />;
+              })}
+              {orVal > 0 && (
+                <>
+                  <View style={st.divider} />
+                  <Row label="Totale beni (stima)" value={fmt(orVal)} color={COLORS.warning} bold />
+                  {hasCosti && (
+                    <>
+                      <Row label="Totale speso" value={fmt(totSpeso)} />
+                      <Row label="P&L beni" value={`${totPnl >= 0 ? '+' : ''}${fmt(totPnl)}${totSpeso > 0 ? ` (${totPnl >= 0 ? '+' : ''}${((totPnl / totSpeso) * 100).toFixed(1)}%)` : ''}`} color={colorPL(totPnl)} bold />
+                    </>
+                  )}
+                </>
+              )}
+            </SectionCard>
+          );
+        })()}
 
         {/* 5 — PASSIVITÀ */}
         <SectionCard title="PASSIVITÀ — MUTUI" icon="business-outline">
